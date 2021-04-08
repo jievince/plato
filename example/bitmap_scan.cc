@@ -37,7 +37,7 @@ DEFINE_bool(quick,  true,    "use quick scan or not");
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
-  google::LogToStderr();
+  // google::LogToStderr();
 }
 
 int main(int argc, char** argv) {

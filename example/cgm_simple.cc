@@ -46,7 +46,7 @@ DEFINE_bool(need_encode,     false,                    "");
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
-  google::LogToStderr();
+  // google::LogToStderr();
 }
 
 template <typename VID_T>

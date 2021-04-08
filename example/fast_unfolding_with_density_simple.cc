@@ -44,7 +44,7 @@ DEFINE_int32(inner_iteration, 2,   "inner iteration of algorithm");
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
-  google::LogToStderr();
+  // google::LogToStderr();
 }
 
 int main(int argc, char** argv) {

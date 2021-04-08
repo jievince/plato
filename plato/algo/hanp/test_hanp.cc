@@ -61,7 +61,7 @@ const float dis = 1e-6;
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
-  google::LogToStderr();
+  // google::LogToStderr();
 }
 
 void init_cluster_info() {
@@ -230,7 +230,7 @@ int main(int argc, char** argv) {
 
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
-  google::LogToStderr();
+  // google::LogToStderr();
 
   // set OpenMP if not set
   if (getenv("OMP_NUM_THREADS") == nullptr) {

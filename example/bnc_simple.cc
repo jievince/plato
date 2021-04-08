@@ -45,7 +45,7 @@ DEFINE_double(constant,     2,     "");
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
-  google::LogToStderr();
+  // google::LogToStderr();
 }
 
 int main(int argc, char** argv) {
