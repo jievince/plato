@@ -100,7 +100,7 @@ public:
 
   template <class U, class... Args>
   void construct(U* p, Args&&... args) {
-    new ((void*)p) U(std::forward<Args>(args)...);
+    new ((void*)p) U(std::forward<Args>(args)...); // placement new操作符
   }
 
   template <class U>

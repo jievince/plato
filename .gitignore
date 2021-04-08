@@ -6,6 +6,7 @@
 *.gdb_history
 *.DS_Store
 target/
+.vscode/
 
 project/boot/
 project/plugins/project/

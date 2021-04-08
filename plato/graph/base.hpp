@@ -198,8 +198,8 @@ struct cluster_info_t {  // user should keep this struct alive during whole proc
     } else {
       threads_ = numa_num_configured_cpus();
     }
-    omp_set_dynamic(0);
-    omp_set_num_threads(threads_);
+    omp_set_dynamic(0); // 运行时不可以动态调整线程数
+    omp_set_num_threads(threads_); // 设置并行区域中的线程数
 
     sockets_ = numa_num_configured_nodes();
 

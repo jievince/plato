@@ -45,7 +45,7 @@ Copyright (c) 2015-2016 Xiaowei Zhu, Tsinghua University
 #include "mpi.h"
 #include "glog/logging.h"
 
-#define MPI_MSG_MAX_SIZE 1073741824 
+#define MPI_MSG_MAX_SIZE 1073741824 // 2^30
 
 namespace plato {
 

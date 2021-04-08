@@ -187,7 +187,7 @@ size_t bitmap_t<ALLOC>::msb(void) const {
       uint64_t msb  = 0;
 
       while (word) {
-        word = word / 2;
+        word = word / 2; // word = word >> 1
         ++msb;
       }
 
@@ -232,7 +232,7 @@ size_t bitmap_t<ALLOC>::count(void) const {
   size_t bm_size = word_offset(size_);
   #pragma omp parallel for reduction(+:cnt)
   for (size_t i = 0; i <= bm_size; ++i) {
-    cnt += __builtin_popcountl(data_[i]);
+    cnt += __builtin_popcountl(data_[i]); // 用于计算一个无符号整数有多少个位为1
   }
   return cnt;
 }

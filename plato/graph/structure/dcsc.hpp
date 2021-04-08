@@ -210,16 +210,17 @@ int dcsc_t<EDATA, PART_IMPL, ALLOC>::load_from_traversal(vid_t vertices, std::fu
   // build compressed index
   {
     vid_t tmp_vertices = vertices;
-    index_allocator_t __alloc(allocator_);
+    index_allocator_t __alloc(allocator_); // using index_allocator_t = typename traits_::template rebind_alloc<eid_t>;
     auto* __p = __alloc.allocate(vertices + 1);
     memset(__p, 0, sizeof(eid_t) * (vertices + 1));
 
-    index_.reset(__p, [__alloc, tmp_vertices](index_pointer p) mutable {
+    index_.reset(__p, [__alloc, tmp_vertices](index_pointer p) mutable { // adj_index
       __alloc.deallocate(p, tmp_vertices + 1);
     });
   }
 
-  {  // count each vertex's in degree
+  // 第一阶段: 构建adj_index和bitmap
+  {  // count each vertex's in degree // 入度
     bitmap_t<> v_bitmap(vertices);
 
     opts.threads_               = -1;
@@ -233,9 +234,9 @@ int dcsc_t<EDATA, PART_IMPL, ALLOC>::load_from_traversal(vid_t vertices, std::fu
       foreach_dests(send);
     };
 
-    auto __recv = [&](int /*p_i*/, bsp_recv_pmsg_t<vid_t>& pmsg) {
-      __sync_fetch_and_add(&index_.get()[*pmsg + 1], (eid_t)1);
-      v_bitmap.set_bit(*pmsg);
+    auto __recv = [&](int /*p_i*/, bsp_recv_pmsg_t<vid_t>& pmsg) { // [master src]->[mirror dst]
+      __sync_fetch_and_add(&index_.get()[*pmsg + 1], (eid_t)1); // adj_size, 后面会处理成adj_index
+      v_bitmap.set_bit(*pmsg); // [mirror dst]的入度
     };
 
     reset_traversal(false);
@@ -244,7 +245,7 @@ int dcsc_t<EDATA, PART_IMPL, ALLOC>::load_from_traversal(vid_t vertices, std::fu
       return -1;
     }
 
-    vertices_ = v_bitmap.count();
+    vertices_ = v_bitmap.count(); // dcsc(partition)的子图, sparse: [mirror src]; dense: [mirror dst]
   }
 
   if (0 == cluster_info.partition_id_) {
@@ -252,13 +253,14 @@ int dcsc_t<EDATA, PART_IMPL, ALLOC>::load_from_traversal(vid_t vertices, std::fu
   }
 
   for (size_t i = 1; i <= vertices; ++i) {
-    index_.get()[i] = index_.get()[i] + index_.get()[i - 1];
+    index_.get()[i] = index_.get()[i] + index_.get()[i - 1]; // adj_index. adj_index之前处理的是1...vertecies的下标
   }
 
-  edges_ = index_.get()[vertices];
+  edges_ = index_.get()[vertices]; // dcsc(part)
   LOG(INFO) << "[staging-1]: [" << cluster_info.partition_id_ << "] local edges(" << edges_ << ")"
     << ", local vertices(" << vertices_ << ")";
 
+  // 第二阶段: 构建adj_list
   {
     eid_t tmp_edges = edges_;
 
@@ -266,10 +268,10 @@ int dcsc_t<EDATA, PART_IMPL, ALLOC>::load_from_traversal(vid_t vertices, std::fu
     auto* __p = __alloc.allocate(edges_);
     if (false == std::is_trivial<adj_unit_spec_t>::value) {
       for (size_t i = 0; i < edges_; ++i) {
-        __alloc.construct(&__p[i]);
+        __alloc.construct(&__p[i]); // placement new, 初始化
       }
     }
-    adjs_.reset(__p, [__alloc, tmp_edges](adjs_pointer p) mutable {
+    adjs_.reset(__p, [__alloc, tmp_edges](adjs_pointer p) mutable { // adjs_就是adj_list
       if (false == std::is_trivial<adj_unit_spec_t>::value) {
         for (size_t i = 0; i < tmp_edges; ++i) {
           __alloc.destroy(&p[i]);
@@ -292,10 +294,10 @@ int dcsc_t<EDATA, PART_IMPL, ALLOC>::load_from_traversal(vid_t vertices, std::fu
     };
 
     auto __recv = [&](int /*p_i*/, bsp_recv_pmsg_t<edge_unit_spec_t>& pmsg) {
-      eid_t idx = __sync_fetch_and_add(&index_.get()[pmsg->dst_], (eid_t)1);
+      eid_t idx = __sync_fetch_and_add(&index_.get()[pmsg->dst_], (eid_t)1); // pos's range[index[v_i], index[v_i+1])， 稍后会被复原
 
-      auto& nei = adjs_.get()[idx];
-      nei.neighbour_ = pmsg->src_;
+      auto& nei = adjs_.get()[idx]; // adjs_是outgoing_adj_list
+      nei.neighbour_ = pmsg->src_; // [master src]
       nei.edata_     = pmsg->edata_;
     };
 
@@ -305,7 +307,7 @@ int dcsc_t<EDATA, PART_IMPL, ALLOC>::load_from_traversal(vid_t vertices, std::fu
       return -1;
     }
     for (size_t i = vertices - 1; i >= 1; --i) {
-      index_.get()[i] = index_.get()[i - 1];
+      index_.get()[i] = index_.get()[i - 1]; // 复原index_
     }
     index_.get()[0] = 0;
   }
@@ -315,8 +317,9 @@ int dcsc_t<EDATA, PART_IMPL, ALLOC>::load_from_traversal(vid_t vertices, std::fu
   }
 
   {
-    vid_t tmp_vertices = vertices_;
-    local_vertex_allocator_t __alloc(allocator_);
+    vid_t tmp_vertices = vertices_; // dcsc(part)的子图
+    local_vertex_allocator_t __alloc(allocator_); // using local_vertex_allocator_t = typename traits_::template rebind_alloc<vid_t>;
+
     auto* __p = __alloc.allocate(vertices_ + 1);
     memset(__p, 0, sizeof(vid_t) * (vertices_ + 1));
 
@@ -330,7 +333,7 @@ int dcsc_t<EDATA, PART_IMPL, ALLOC>::load_from_traversal(vid_t vertices, std::fu
     vid_t idx = 0;
     for (vid_t v_i = 0; v_i < vertices; ++v_i) {
       if (0 != (index_.get()[v_i + 1] - index_.get()[v_i])) {
-        index_.get()[idx] = index_.get()[v_i];
+        index_.get()[idx] = index_.get()[v_i]; // 压缩 index_, 只保留dscs(part)的子图的index_.
         local_vertex_.get()[idx] = v_i;
         ++idx;
       }
@@ -361,7 +364,7 @@ int dcsc_t<EDATA, PART_IMPL, ALLOC>::load_from_cache(const graph_info_t& graph_i
       CHECK(edge->src_ < graph_info.vertices_);
       CHECK(edge->dst_ < graph_info.vertices_);
 
-      send(partitioner_->get_partition_id(edge->src_, edge->dst_), edge->dst_);
+      send(partitioner_->get_partition_id(edge->src_, edge->dst_), edge->dst_); // [master src]->[mirror dst]
       if (false == graph_info.is_directed_) {  // cache friendly
         send(partitioner_->get_partition_id(edge->dst_, edge->src_), edge->src_);
       }
@@ -548,12 +551,12 @@ bool dcsc_t<EDATA, PART_IMPL, ALLOC>::next_chunk(traversal_t traversal, size_t* 
 
   vid_t range_end = range_start + *chunk_size;
 
-  for (vid_t range_i = range_start; range_i < range_end; ++range_i) {
+  for (vid_t range_i = range_start; range_i < range_end; ++range_i) { // 处理一个chunk的边
     vid_t v_start = traverse_range_[range_i].first;
     vid_t v_end   = traverse_range_[range_i].second;
 
     for (vid_t v_i = v_start; v_i < v_end; ++v_i) {
-      eid_t idx_start = index_.get()[v_i];
+      eid_t idx_start = index_.get()[v_i]; // adj_index
       eid_t idx_end   = index_.get()[v_i + 1];
 
       if (false == traversal(local_vertex_.get()[v_i], adj_unit_list_spec_t(&adjs_.get()[idx_start], &adjs_.get()[idx_end]))) {

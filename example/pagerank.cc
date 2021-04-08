@@ -76,7 +76,7 @@ int main(int argc, char** argv) {
 
   // init graph
   plato::graph_info_t graph_info(FLAGS_is_directed);
-  auto pdcsc = plato::create_dcsc_seqs_from_path<plato::empty_t>(
+  auto pdcsc = plato::create_dcsc_seqs_from_path<plato::empty_t>( // seqs means seq part_by_src [master src]->[mirror dst] dense
     &graph_info, FLAGS_input, plato::edge_format_t::CSV,
     plato::dummy_decoder<plato::empty_t>, FLAGS_alpha, FLAGS_part_by_in
   );
@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
   std::shared_ptr<rank_state_t> next_rank(new rank_state_t(graph_info.max_v_i_, pdcsc->partitioner()));
 
   watch.mark("t1");
-  auto odegrees = plato::generate_dense_out_degrees_fg<uint32_t>(graph_info, *pdcsc, false);
+  auto odegrees = plato::generate_dense_out_degrees_fg<uint32_t>(graph_info, *pdcsc, false); // out_degrees
 
   if (0 == cluster_info.partition_id_) {
     LOG(INFO) << "generate out-degrees from graph cost: " << watch.show("t1") / 1000.0 << "s";
@@ -127,11 +127,12 @@ int main(int argc, char** argv) {
     }
 
     watch.mark("t1");
+    // pagerank 只用dense模式
     plato::aggregate_message<double, int, graph_spec_t> (*pdcsc,
       [&](const context_spec_t& context, plato::vid_t v_i, const adj_unit_list_spec_t& adjs) {
         double rank_sum = 0.0;
-        for (auto it = adjs.begin_; adjs.end_ != it; ++it) {
-          rank_sum += (*curt_rank)[it->neighbour_];
+        for (auto it = adjs.begin_; adjs.end_ != it; ++it) { // adjs is incoming edges: [master src]->[mirror dst]
+          rank_sum += (*curt_rank)[it->neighbour_]; // neighbour is [master src]
         }
         context.send(message_spec_t { v_i, rank_sum });
       },
@@ -150,7 +151,7 @@ int main(int argc, char** argv) {
     if (FLAGS_iterations - 1 == epoch_i) {
       delta = next_rank->foreach<double> (
         [&](plato::vid_t v_i, double* pval) {
-          *pval = 1.0 - FLAGS_damping + FLAGS_damping * (*pval);
+          *pval = 1.0 - FLAGS_damping + FLAGS_damping * (*pval); // 计算最终pagerank值
           return 0;
         }
       );
@@ -159,8 +160,8 @@ int main(int argc, char** argv) {
         [&](plato::vid_t v_i, double* pval) {
           *pval = 1.0 - FLAGS_damping + FLAGS_damping * (*pval);
           if (odegrees[v_i] > 0) {
-            *pval = *pval / odegrees[v_i];
-            return fabs(*pval - (*curt_rank)[v_i]) * odegrees[v_i];
+            *pval = *pval / odegrees[v_i]; // 为下一轮迭代做准备
+            return fabs(*pval - (*curt_rank)[v_i]) * odegrees[v_i]; // 两次迭代的pagerank[v_i]的差值
           }
           return fabs(*pval - (*curt_rank)[v_i]);
         }

@@ -136,7 +136,7 @@ protected:
  *  Graph Processing System
  **/
 
-// edge belong to source node's partition
+// edge belong to source node's partition // [master src -> mirror dst]
 class sequence_balanced_by_source_t {
 public:
 
@@ -199,7 +199,7 @@ public:
 
 // edge belong to destination node's partition
 
-class sequence_balanced_by_destination_t {
+class sequence_balanced_by_destination_t { // [mirror src -> master dst] sparse
 public:
 
   // ******************************************************************************* //

@@ -192,7 +192,7 @@ std::shared_ptr<CACHE<EDATA, vid_t>> load_edges_cache(
     graph_info_t*                   pginfo,
     const std::string&              path,
     edge_format_t                   format,
-    decoder_t<EDATA>                decoder,
+    decoder_t<EDATA>                decoder, // decoder用来解码边上weight数据，如double_decoder
     data_callback_t<EDATA, vid_t>   callback = nullptr,
     vencoder_t<EDATA, VID_T, CACHE> vid_encoder = nullptr) {
 
@@ -228,7 +228,7 @@ std::shared_ptr<CACHE<EDATA, vid_t>> load_edges_cache(
       MPI_BOR, MPI_COMM_WORLD);
 
   if (pginfo) {
-    pginfo->edges_    = edges;
+    pginfo->edges_    = edges; // graph_info记录的是全图数据
     pginfo->vertices_ = v_bitmap.count();
     pginfo->max_v_i_  = v_bitmap.msb();
   }
@@ -1144,7 +1144,7 @@ std::pair<
 
   std::vector<vid_t> degrees;
   if (use_in_degree) {
-    degrees = generate_dense_in_degrees<vid_t>(*pgraph_info, *cache);
+    degrees = generate_dense_in_degrees<vid_t>(*pgraph_info, *cache); // 全图出度
   } else {
     degrees = generate_dense_out_degrees<vid_t>(*pgraph_info, *cache);
   }
