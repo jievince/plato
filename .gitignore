@@ -7,6 +7,7 @@
 *.DS_Store
 target/
 .vscode/
+core.*
 
 project/boot/
 project/plugins/project/
@@ -53,3 +54,5 @@ CMakeLists.txt
 3rd/mpich
 3rd/mpich-3.2.1/
 3rd/nebula-cpp/
+
+scripts/

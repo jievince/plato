@@ -161,14 +161,18 @@ public:
 
 private:
   void loadConfigs(const std::string &path) {
-    std::ifstream file(path.c_str());
+    std::ifstream fin(path.c_str());
+    if (!fin) {
+      LOG(ERROR) << "open nebula config file " << path << " failed";
+    }
 
     std::string line, key, val;
     int posEqual;
-    while (std::getline(file, line)) {
+    while (fin.good() && (false == fin.eof())) {
+      std::getline(fin, line);
       if (boost::starts_with(line, "--")) {
         posEqual = line.find('=');
-        key = trim(line.substr(2, posEqual));
+        key = trim(line.substr(2, posEqual-2));
         val = trim(line.substr(posEqual + 1));
         if (key == "meta_server_addrs") {
           std::vector<std::string> metas;
@@ -216,20 +220,29 @@ private:
  **/
 template <typename EDATA, typename VID_T = vid_t>
 void read_from_nebula(
-  const std::string&            configpath,
+  const std::string&            path,
   edge_format_t                 format,
   decoder_t<EDATA>              decoder,
   data_callback_t<EDATA, VID_T> callback) {
 
-  CHECK(format == edge_format_t::NEBULA);
   auto& cluster_info = cluster_info_t::get_instance();
   nebula_scanner_t<EDATA, VID_T> scanner = nebula_scanner<EDATA, VID_T>;
 
+  std::string pathPrefix = "nebula:";
+  CHECK(boost::istarts_with(path, pathPrefix)) << "invalid nebula config path: " << path;
+  auto configpath = path.substr(pathPrefix.size());
   NebulaConfig config(configpath);
   std::vector<nebula::MetaHostAddr> metaServers = config.getMetaServers();
+  LOG(INFO) << "jie, metaServers.size()=" << metaServers.size();
+  for (auto& meta : metaServers) {
+    LOG(INFO) << "jie: " << meta;
+  }
   std::string spaceName = config.getSpaceName();
+  LOG(INFO) << "jie, spaceName: " << spaceName;
   std::string edgeName = config.getEdgeName();
+  LOG(INFO) << "jie, edgeName: " << edgeName;
   std::string edgeDataField = config.getEdgeDataField();
+  LOG(INFO) << "jie, edgeData: " << edgeDataField;
 
   nebula::StorageClient client(metaServers);
 
@@ -341,7 +354,7 @@ std::shared_ptr<CACHE<EDATA, vid_t>> load_edges_cache(
       LOG(ERROR) << "cannot read uint64 without vid encoder: " << (uint64_t)format;
       return nullptr;
     }
-    if (format == edge_format_t::NEBULA) {
+    if (boost::istarts_with(path, "nebula:")) {
       read_from_nebula<EDATA, vid_t>(path, format, decoder, real_callback);
     } else {
       read_from_files<EDATA, vid_t>(path, format, decoder, real_callback);
