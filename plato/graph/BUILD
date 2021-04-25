@@ -33,6 +33,7 @@ cc_library (
         "//plato/parallel:shuffle",
         "//3rd/boost:boost_include",
         "//3rd/boost:boost_filesystem",
+        "//3rd/nebula-cpp:nebula_storage_client-dynamic",
 
         ":base",
     ],
@@ -52,6 +53,7 @@ cc_library (
         "//3rd/glog:glog",
         "//3rd/gflags:gflags",
         "//3rd/boost:boost_include",
+        "//3rd/nebula-cpp:nebula_storage_client-dynamic",
 
         "//plato/graph:base",
         "//plato/util:libsvm",

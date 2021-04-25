@@ -62,13 +62,16 @@ struct empty_t { };
 
 enum class edge_format_t {
   UNKNOWN = 0,
-  CSV     = 1
+  CSV     = 1,
+  NEBULA  = 2
 };
 
 inline std::string edgeformat2name(edge_format_t format) {
   switch (format) {
   case edge_format_t::CSV:
     return "csv";
+  case edge_format_t::NEBULA:
+    return "nebula";
   default:
     return "unknown";
   }
@@ -77,6 +80,8 @@ inline std::string edgeformat2name(edge_format_t format) {
 inline edge_format_t name2edgeformat(const std::string& name) {
   if ("csv" == name || "CSV" == name) {
     return edge_format_t::CSV;
+  } else if ("nebula" == name || "NEBULA" == name) {
+    return edge_format_t::NEBULA;
   }
   return edge_format_t::UNKNOWN;
 }

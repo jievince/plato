@@ -33,6 +33,7 @@
 #include "boost/iostreams/filter/gzip.hpp"
 #include "boost/iostreams/filtering_stream.hpp"
 #include "boost/iostreams/device/file.hpp"
+#include "nebula/sclient/StorageClient.h"
 
 #include "omp.h"
 #include "mpi.h"
@@ -74,6 +75,28 @@ inline int assign_files_even_by_size(std::vector<std::vector<std::string>>* pout
     if ((cul_size > size_per_part) && (part != (parts - 1))) {
       ++part;
       cul_size = 0;
+    }
+  }
+  return 0;
+}
+
+inline int assign_parts_even_by_num(std::vector<std::vector<int32_t>>* poutput,
+    const std::vector<std::int32_t>& nebula_parts,
+    int parts) {
+  size_t total_num = nebula_parts.size();
+
+  size_t cul_num = 0;
+  size_t num_per_part = total_num / parts;
+
+  int part = 0;
+  poutput->clear();
+  poutput->resize(parts);
+  for (auto nebula_part : nebula_parts) {
+    poutput->at(part).emplace_back(nebula_part);
+    ++cul_num;
+    if ((cul_num > num_per_part) && (part != (parts - 1))) {
+      ++part;
+      cul_num = 0;
     }
   }
   return 0;
@@ -189,6 +212,46 @@ inline std::vector<std::string> get_files(const std::string& path) {
   } else {
     return get_files_from_posix(path);
   }
+}
+
+inline std::vector<int32_t> get_nebula_parts(nebula::StorageClient& client, const std::string& spaceName) {
+  int rc = 0;
+  auto& cluster_info = cluster_info_t::get_instance();
+  std::vector<int> chunks;
+  std::vector<std::vector<int32_t>> fchunks;
+
+  if (0 == cluster_info.partition_id_) {  // split parts of nebula evenly
+    std::vector<int32_t> parts = client.getParts(spaceName);
+
+    if ((rc = assign_parts_even_by_num(&fchunks, parts, cluster_info.partitions_)) < 0) {
+      LOG(ERROR) << "assign_parts_even_by_num failed with code: " << rc;
+      throw std::runtime_error((boost::format("assign_parts_even_by_num failed with code: %d") % rc).str());
+    }
+    for (size_t i = 0; i < fchunks.size(); ++i) {
+      LOG(INFO) << "partition-" << i << ", file-count: " << fchunks[i].size();
+    }
+  }
+
+  // assign part chunks
+  std::atomic<uint32_t> s_index(0);
+  auto shuffle_send = [&](shuffle_send_callback_t<std::vector<int32_t>> send) {
+    if (0 == cluster_info.partition_id_) {
+      for (uint32_t s_i = s_index.fetch_add(1); s_i < fchunks.size(); s_i = s_index.fetch_add(1)) {
+        send(s_i, fchunks[s_i]);
+      }
+    }
+  };
+
+  auto shuffle_recv = [&](int /*p_i*/, plato::shuffle_recv_pmsg_t<std::vector<int32_t>>& pmsg) {
+    chunks = *pmsg;
+  };
+
+  if (0 != (rc = shuffle<std::vector<int32_t>>(shuffle_send, shuffle_recv))) {
+    LOG(ERROR) << "shuffle failed with code: " << rc;
+    throw std::runtime_error((boost::format("shuffle failed with code: %d") % rc).str());
+  }
+
+  return chunks;
 }
 
 /*

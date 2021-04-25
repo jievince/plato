@@ -133,6 +133,127 @@ void read_from_files(
 
 }
 
+std::string trim(std::string const &source, char const *delims = " \t\r\n") {
+  std::string result(source);
+  std::string::size_type index = result.find_last_not_of(delims);
+  if (index != std::string::npos)
+    result.erase(++index);
+
+  index = result.find_first_not_of(delims);
+  if (index != std::string::npos)
+    result.erase(0, index);
+  else
+    result.erase();
+  return result;
+}
+
+class NebulaConfig {
+public:
+  explicit NebulaConfig(const std::string &path) { loadConfigs(path); }
+
+  const std::vector<nebula::MetaHostAddr> &getMetaServers() const { return metaServers_; }
+
+  const std::string &getSpaceName() const { return spaceName_; }
+
+  const std::string &getEdgeName() const { return edgeName_; }
+
+  const std::string &getEdgeDataField() const { return edgeDataField_; }
+
+private:
+  void loadConfigs(const std::string &path) {
+    std::ifstream file(path.c_str());
+
+    std::string line, key, val;
+    int posEqual;
+    while (std::getline(file, line)) {
+      if (boost::starts_with(line, "--")) {
+        posEqual = line.find('=');
+        key = trim(line.substr(2, posEqual));
+        val = trim(line.substr(posEqual + 1));
+        if (key == "meta_server_addrs") {
+          std::vector<std::string> metas;
+          boost::split(metas, val, boost::is_any_of(","),
+                       boost::token_compress_on);
+          for (auto &meta : metas) {
+            std::vector<std::string> ip_port;
+            boost::split(ip_port, meta, boost::is_any_of(":"),
+                         boost::token_compress_on);
+            CHECK(ip_port.size() == 2);
+            metaServers_.emplace_back(ip_port[0], std::stoi(ip_port[1]));
+          }
+        } else if (key == "space_name") {
+          spaceName_ = val;
+        } else if (key == "edge_name") {
+          edgeName_ = val;
+        } else if (key == "edge_data_field") {
+          edgeDataField_ = val;
+        } else {
+          LOG(WARNING) << "Unknown nebula config item: " << key;
+        }
+      }
+    }
+  }
+
+  std::vector<nebula::MetaHostAddr> metaServers_;
+  std::string spaceName_;
+  std::string edgeName_;
+  std::string edgeDataField_;
+};
+
+/*
+ * parallel parse edges from file system to cache
+ *
+ * \tparam EDATA        data bind on edge
+ * \tparam VID_T        vertex id type, can be uint32_t or uint64_t
+ *
+ * \param path          input file path, 'path' can be a file or a directory.
+ *                      'path' can be located on hdfs or posix, distinguish by its prefix.
+ *                      eg: 'hdfs://' means hdfs, '/' means posix, 'wfs://' means wfs
+ * \param format        file format
+ * \param decoder       edge data decode, string => EDATA
+ * \param callback      function executed when parsing data
+ *
+ **/
+template <typename EDATA, typename VID_T = vid_t>
+void read_from_nebula(
+  const std::string&            configpath,
+  edge_format_t                 format,
+  decoder_t<EDATA>              decoder,
+  data_callback_t<EDATA, VID_T> callback) {
+
+  CHECK(format == edge_format_t::NEBULA);
+  auto& cluster_info = cluster_info_t::get_instance();
+  nebula_scanner_t<EDATA, VID_T> scanner = nebula_scanner<EDATA, VID_T>;
+
+  NebulaConfig config(configpath);
+  std::vector<nebula::MetaHostAddr> metaServers = config.getMetaServers();
+  std::string spaceName = config.getSpaceName();
+  std::string edgeName = config.getEdgeName();
+  std::string edgeDataField = config.getEdgeDataField();
+
+  nebula::StorageClient client(metaServers);
+
+  std::vector<int> parts = get_nebula_parts(client, spaceName);
+
+  std::mutex parts_lock;
+
+  #pragma omp parallel num_threads(cluster_info.threads_)
+  {
+    while (true) {
+      int partID;
+      {
+        std::lock_guard<std::mutex> lock(parts_lock);
+        if (parts.empty()) break;
+        partID = parts.back();
+        parts.pop_back();
+      }
+
+      scanner(client, spaceName, partID, edgeName, edgeDataField, callback, decoder);
+    }
+  }
+
+}
+
 /*
  * parallel load edges with encoder from file system to cache
  *
@@ -220,7 +341,11 @@ std::shared_ptr<CACHE<EDATA, vid_t>> load_edges_cache(
       LOG(ERROR) << "cannot read uint64 without vid encoder: " << (uint64_t)format;
       return nullptr;
     }
-    read_from_files<EDATA, vid_t>(path, format, decoder, real_callback); 
+    if (format == edge_format_t::NEBULA) {
+      read_from_nebula<EDATA, vid_t>(path, format, decoder, real_callback);
+    } else {
+      read_from_files<EDATA, vid_t>(path, format, decoder, real_callback);
+    }
   }
 
   MPI_Allreduce(MPI_IN_PLACE, &edges, 1, get_mpi_data_type<eid_t>(), MPI_SUM, MPI_COMM_WORLD);

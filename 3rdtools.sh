@@ -183,6 +183,22 @@ function install {
   clean_exec ln -nsf mpich-3.2.1 mpich
   popd
 
+  ## nebula-cpp
+  if [ ! -f nebula-cpp-master.zip ]; then
+    clean_exec wget -O nebula-cpp-master.zip https://github.com/vesoft-inc/nebula-cpp/archive/refs/heads/master.zip
+  fi
+  clean_exec rm -rf nebula-cpp-master
+  clean_exec unzip nebula-cpp-master.zip
+
+  pushd nebula-cpp-master
+  clean_exec mkdir build
+  pushd build
+  clean_exec cmake -DCMAKE_INSTALL_PREFIX=${rootdir}/3rd/nebula-cpp ..
+  clean_exec make -j$(nproc)
+  clean_exec make install
+  popd
+  popd
+
   popd
   echo "build 3rd done, you can remove .downloads now."
 }

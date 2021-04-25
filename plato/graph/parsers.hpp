@@ -31,10 +31,12 @@
 #include <memory>
 #include <functional>
 #include <type_traits>
+#include <typeinfo>
 
 #include "glog/logging.h"
 #include "boost/format.hpp"
 #include "boost/algorithm/string.hpp"
+#include "nebula/sclient/StorageClient.h"
 
 #include "plato/graph/base.hpp"
 #include "plato/util/libsvm.hpp"
@@ -280,6 +282,98 @@ ssize_t csv_parser(STREAM_T& fin, blockcallback_t<EdgeData, VID_T> callback, dec
         LOG(ERROR) << boost::format("blockcallback failed");
       }
       count = 0;
+    }
+  }
+  if (0 != count) {
+    if (false == callback(buffer.get(), count)) {
+      LOG(ERROR) << boost::format("blockcallback failed");
+    }
+    count = 0;
+  }
+
+  return total_count;
+}
+
+template <typename EdgeData, typename VID_T = vid_t>
+using nebula_scanner_t = std::function<ssize_t(
+    nebula::StorageClient &, std::string &, std::uint32_t, std::string &,
+    std::string &, blockcallback_t<EdgeData, VID_T>, decoder_t<EdgeData>)>;
+
+/**
+ * @brief parser for csv format
+ * Comma-Separated Values, rfc4180
+ * https://tools.ietf.org/html/rfc4180
+ * @tparam EdgeData
+ * @tparam VID_T
+ * @param partID
+ * @param callback
+ * @param decoder
+ * @return
+ */
+template <typename EdgeData, typename VID_T = vid_t>
+ssize_t nebula_scanner(nebula::StorageClient &client, std::string &spaceName,
+                       std::uint32_t partID, std::string &edgeName,
+                       std::string &edgeDataField,
+                       blockcallback_t<EdgeData, VID_T> callback,
+                       decoder_t<EdgeData> decoder) {
+  ssize_t total_count = 0;
+  size_t count = 0;
+  size_t valid_splits = std::is_same<EdgeData, empty_t>::value ? 2 : 3;
+
+  std::unique_ptr< edge_unit_t<EdgeData, VID_T>[] > buffer(new edge_unit_t<EdgeData, VID_T>[HUGESIZE]);
+
+  std::vector<std::string> propNames{"_src", "_dst"};
+  if (valid_splits == 3 && !edgeDataField.empty()) {
+    propNames.emplace_back(edgeDataField);
+  }
+  auto scanIter = client.scanEdgeWithPart(spaceName,
+                                          partID,
+                                          edgeName,
+                                          propNames,
+                                          10000);
+
+  while (scanIter.hasNext()) {
+    nebula::DataSet ds = scanIter.next();
+    for (auto &row : ds.rows) {
+      auto &vals = row.values;
+      CHECK(vals.size() >= 2) << "vals.size() < 2";
+      auto src = vals[0].getInt();
+      CHECK(src <= std::numeric_limits<VID_T>::max()) << "src: " << src << " exceed max value";
+      buffer[count].src_ = src;
+      auto dst = vals[1].getInt();
+      CHECK(dst <= std::numeric_limits<VID_T>::max()) << "dst: " << dst << " exceed max value";
+      buffer[count].dst_ = dst;
+      if (3 == valid_splits) {
+        CHECK(vals.size() >= 3) << "vals.size() < 3";
+        auto &eDataTypeInfo = typeid(EdgeData);
+        if (eDataTypeInfo == typeid(double)) {
+          CHECK(vals[2].isFloat()) << "vals[2] is not double";
+          auto edata = std::to_string(vals[2].getFloat());
+          if (false == decoder(&(buffer[count].edata_), const_cast<char*>(edata.c_str()))) {
+            LOG(WARNING) << boost::format("can not decode EdgeData from (%s)") % edata;
+            continue;
+          }
+        } else if (eDataTypeInfo == typeid(int64_t)) {
+          CHECK(vals[2].isInt()) << "vals[2] is not int64_t";
+          auto edata = std::to_string(vals[2].getInt());
+          if (false == decoder(&(buffer[count].edata_), const_cast<char*>(edata.c_str()))) {
+            LOG(WARNING) << boost::format("can not decode EdgeData from (%s)") % edata;
+            continue;
+          }
+        } else {
+          LOG(WARNING) << boost::format("Unexcepted edgeData type: (%s)") % eDataTypeInfo.name();
+          continue;
+        }
+      }
+      ++total_count;
+      ++count;
+
+      if (count >= HUGESIZE) {
+        if (false == callback(buffer.get(), count)) {
+          LOG(ERROR) << boost::format("blockcallback failed");
+        }
+        count = 0;
+      }
     }
   }
   if (0 != count) {

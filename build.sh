@@ -14,6 +14,7 @@ fi
 export CC=${ROOT_DIR}/3rd/mpich/bin/mpicxx
 export BAZEL_LINKOPTS=-static-libstdc++
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${ROOT_DIR}/3rd/hadoop2/lib
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${ROOT_DIR}/3rd/nebula-cpp/lib64
 
 # test
 bazel test --sandbox_writable_path=$HOME/.ccache plato/...
