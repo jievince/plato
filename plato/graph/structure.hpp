@@ -133,20 +133,6 @@ void read_from_files(
 
 }
 
-std::string trim(std::string const &source, char const *delims = " \t\r\n") {
-  std::string result(source);
-  std::string::size_type index = result.find_last_not_of(delims);
-  if (index != std::string::npos)
-    result.erase(++index);
-
-  index = result.find_first_not_of(delims);
-  if (index != std::string::npos)
-    result.erase(0, index);
-  else
-    result.erase();
-  return result;
-}
-
 class NebulaConfig {
 public:
   explicit NebulaConfig(const std::string &path) { loadConfigs(path); }
@@ -196,6 +182,20 @@ private:
         }
       }
     }
+  }
+
+  std::string trim(std::string const &source, char const *delims = " \t\r\n") {
+    std::string result(source);
+    std::string::size_type index = result.find_last_not_of(delims);
+    if (index != std::string::npos)
+      result.erase(++index);
+
+    index = result.find_first_not_of(delims);
+    if (index != std::string::npos)
+      result.erase(0, index);
+    else
+      result.erase();
+    return result;
   }
 
   std::vector<nebula::MetaHostAddr> metaServers_;
@@ -248,6 +248,11 @@ void read_from_nebula(
 
   std::vector<int> parts = get_nebula_parts(client, spaceName);
 
+  auto vidType = client.getSpaceVidType(spaceName);
+  if (vidType == nebula::VidType::UNKNOWN) {
+    LOG(ERROR) << "Unkwown vid type of space " << spaceName << " in nebula";
+  }
+
   std::mutex parts_lock;
 
   #pragma omp parallel num_threads(cluster_info.threads_)
@@ -299,7 +304,12 @@ void load_edges_cache_with_encoder(
     return true;
   };
 
-  read_from_files<EDATA, VID_T>(path, format, decoder, read_callback); 
+  if (boost::istarts_with(path, "nebula:")) {
+    read_from_nebula<EDATA, VID_T>(path, format, decoder, read_callback);
+  } else {
+    read_from_files<EDATA, VID_T>(path, format, decoder, read_callback);
+  }
+
   vid_encoder->encode(*pcache, callback);
 }
 
