@@ -24,7 +24,9 @@
 #include <vector>
 
 #include "plato/graph/base.hpp"
+#include "plato/graph/structure/vid_encoder_base.hpp"
 #include "plato/graph/structure/edge_cache.hpp"
+#include "plato/graph/structure/vid_encoded_cache.hpp"
 #include "plato/graph/message_passing.hpp"
 #include "libcuckoo/cuckoohash_map.hh"
 #include "plato/util/perf.hpp"
@@ -32,13 +34,8 @@
 
 namespace plato {
 
-struct vid_encoder_opts_t {
-  bool src_need_encode_ = true;
-  bool dst_need_encode_ = true;
-};
-
 template <typename EDATA, typename VID_T = vid_t, template<typename, typename> class CACHE = edge_block_cache_t>
-class vid_encoder_t {
+class vid_encoder_t : public vid_encoder_base_t<EDATA, VID_T, CACHE>{
 public:
   using encoder_callback_t = std::function<bool(edge_unit_t<EDATA, vid_t>*, size_t)>;
   /**
@@ -52,14 +49,14 @@ public:
    * @param cache
    * @param callback
    */
-  void encode(CACHE<EDATA, VID_T>& cache, encoder_callback_t callback);
+  void encode(CACHE<EDATA, VID_T>& cache, encoder_callback_t callback) override;
 
   /**
    * @brief decode
    * @param v_i
    * @return
    */
-  inline VID_T decode(vid_t v_i) {
+  inline VID_T decode(vid_t v_i) override {
     CHECK(v_i < (vid_t)global_ids_.size()) << "v: " <<  v_i << " global size: " << global_ids_.size() << " vid invalid";
     return global_ids_[v_i];
   }
@@ -68,7 +65,7 @@ public:
    * @brief getter
    * @return
    */
-  const std::vector<VID_T>& data() {
+  const std::vector<VID_T>& data() override {
     return global_ids_;
   }
 

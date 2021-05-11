@@ -60,10 +60,13 @@
 #include "plato/graph/structure/dcsc.hpp"
 #include "plato/graph/structure/tcsr.hpp"
 #include "plato/graph/structure/edge_cache.hpp"
+#include "plato/graph/structure/vid_encoded_cache.hpp"
 #include "plato/graph/partition/hash.hpp"
 #include "plato/graph/partition/dummy.hpp"
 #include "plato/graph/partition/sequence.hpp"
+#include "plato/graph/structure/vid_encoder_base.hpp"
 #include "plato/graph/structure/vid_encoder.hpp"
+#include "plato/graph/structure/distributed_vid_encoder.hpp"
 
 #include "yas/types/std/vector.hpp"
 #include "yas/types/std/string.hpp"
@@ -77,7 +80,7 @@ template <typename EDATA, typename VID_T = vid_t>
 using data_callback_t = std::function<bool(edge_unit_t<EDATA, VID_T>*, size_t)>;
 
 template <typename EDATA, typename VID_T = vid_t, template<typename, typename> class CACHE = edge_block_cache_t>
-using vencoder_t = typename std::remove_reference<vid_encoder_t<EDATA,VID_T,CACHE>*>::type;
+using vencoder_t = typename std::remove_reference<vid_encoder_base_t<EDATA,VID_T,CACHE>*>::type;
 
 /*
  * parallel parse edges from file system to cache

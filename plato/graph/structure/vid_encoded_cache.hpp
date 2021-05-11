@@ -23,6 +23,7 @@
 
 #include "plato/util/object_buffer.hpp"
 #include "plato/util/mmap_alloc.hpp"
+#include "plato/graph/message_passing.hpp"
 
 namespace plato {
 
@@ -41,20 +42,20 @@ public:
 // thread-safe vid encoder block cache implementation, fixed capacity, can save memory
 template <typename VID_T = vid_t>
 class vid_encoded_block_cache_t
-  : public object_block_buffer_t<mepa_sd_vid_encoder_message_t<VID_T> {
+  : public object_block_buffer_t<mepa_sd_vid_encoder_message_t<VID_T>> {
 
 public:
-  explicit vid_encoded_block_cache_t(void) : object_block_buffer_t<mepa_sd_vid_encoder_message_t<VID_T>() { }
+  explicit vid_encoded_block_cache_t(void) : object_block_buffer_t<mepa_sd_vid_encoder_message_t<VID_T>>() { }
   explicit vid_encoded_block_cache_t(size_t block_num, size_t block_size) : 
-    object_buffer_t<mepa_sd_vid_encoder_message_t<VID_T>(block_num, block_size) { }
+    object_buffer_t<mepa_sd_vid_encoder_message_t<VID_T>>(block_num, block_size) { }
 };
 
 // thread-safe vid encoder cache implementation, fixed capacity
 template <typename VID_T = vid_t>
-class vid_encoded_file_cache_t : public object_file_buffer_t<mepa_sd_vid_encoder_message_t<VID_T> {
+class vid_encoded_file_cache_t : public object_file_buffer_t<mepa_sd_vid_encoder_message_t<VID_T>> {
 public:
-  explicit vid_encoded_file_cache_t(void) : object_file_buffer_t<mepa_sd_vid_encoder_message_t<VID_T>() { }
-  explicit vid_encoded_file_cache_t(size_t n) : object_file_buffer_t<mepa_sd_vid_encoder_message_t<VID_T>(n) { }
+  explicit vid_encoded_file_cache_t(void) : object_file_buffer_t<mepa_sd_vid_encoder_message_t<VID_T>>() { }
+  explicit vid_encoded_file_cache_t(size_t n) : object_file_buffer_t<mepa_sd_vid_encoder_message_t<VID_T>>(n) { }
 };
 
 }
