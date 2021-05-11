@@ -149,11 +149,35 @@ R aggregate_message (
 // ******************************************************************************* //
 // spread message
 
+template <typename VID_T>
+struct mepa_sd_vid_encoder_message_t {
+  VID_T v_i_;
+  size_t idx_;
+  bool is_src_;
+
+  template<typename Ar>
+  void serialize(Ar &ar) {
+    ar & v_i_ & idx_ & is_src_;
+  }
+};
+
+template <>
+struct mepa_sd_vid_encoder_message_t<vid_t> {
+  vid_t v_i_;
+  size_t idx_;
+  bool is_src_;
+
+  template<typename Ar>
+  void serialize(Ar &ar) {
+    ar & v_i_ & idx_ & is_src_;
+  }
+};
+
 template <typename MSG>
 using mepa_sd_send_callback_t = std::function<void(int, const MSG&)>;
 
 template <typename MSG>
-struct mepa_sd_context_t {
+struct mepa_sd_context_t { /// sd means spread
   mepa_sd_send_callback_t<MSG> send;
 };
 
@@ -297,7 +321,7 @@ R broadcast_message (
   thread_local R* preducer;
 
   auto __send = [&](bc_send_callback_t<MSG> send) {
-    auto send_callback = [&](const MSG& message) {
+    auto send_callback = [&](const MSG& message) { /// send msg to every node
       send(message);
     };
 

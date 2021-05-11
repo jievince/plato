@@ -215,7 +215,7 @@ protected:
  */
 template <typename MSG>
 int bsp (
-    bsp_buffer_t* precv_buff,
+    bsp_buffer_t* precv_buff, /// no recv_task, all received msg will be cached to predv_buff, and will be used in bsp() caller.
     bsp_send_task_t<MSG> send_task,
     bsp_opts_t opts = bsp_opts_t()) {
 
@@ -267,7 +267,7 @@ int bsp (
 
       MPI_Testany(requests_vec.size(), requests_vec.data(), &index, &flag, &status);
       while (flag && (MPI_UNDEFINED != index)) {
-        if (ShuffleFin == status.MPI_TAG) {
+        if (ShuffleFin == status.MPI_TAG) { /// ShuffleFin: 消息传输结束标志
           ++finished_count;
           requests_vec[index] = MPI_REQUEST_NULL;
         } else {  // append to cache
@@ -293,10 +293,10 @@ int bsp (
       idle_times += (uint32_t)(false == busy);
 
       if (idle_times > 1024) {
-        poll(nullptr, 0, 1);
+        poll(nullptr, 0, 1); /// sleep 1ms
         idle_times = 0;
       } else if (false == busy) {
-        pthread_yield();
+        pthread_yield(); /// pthread_yield 使当前的线程自动放弃剩余的CPU时间从而让另一个线程运行
       }
     }
     probe_once();
@@ -322,6 +322,7 @@ int bsp (
   }
 
   std::atomic<bool> continued(true);
+  /// 辅助后面的多线程并行域
   std::thread send_assist_thread ([&](void) {  // move complete request to buffer
     uint32_t idle_times = 0;
     while (continued.load()) {
@@ -376,14 +377,14 @@ int bsp (
     }
   });
 
-  #pragma omp parallel num_threads(opts.threads_)
+  #pragma omp parallel num_threads(opts.threads_) /// 下面block中代码被多线程并行执行(任务并没有分解), 每个线程维护自己的内存
   {
-    std::vector<std::shared_ptr<oarchive_spec_t>> oarchives_vec(cluster_info.partitions_);
+    std::vector<std::shared_ptr<oarchive_spec_t>> oarchives_vec(cluster_info.partitions_); // oarchives是各个线程内部的，blist是线程间汇总的(共享的)
     for (size_t p_i = 0; p_i < oarchives_vec.size(); ++p_i) {
       oarchives_vec[p_i].reset(new oarchive_spec_t(16 * PAGESIZE));
     }
 
-    auto flush_local = [&](int p_i) {
+    auto flush_local = [&](int p_i) { /// local指的是thread的buffer
       auto& poarchive = oarchives_vec[p_i];
       auto& buflck    = buflck_vec[p_i];
       auto& blist     = global_sndbuf_vec[p_i];
@@ -407,9 +408,9 @@ int bsp (
 
       append_chunk_tail(poarchive.get());
       auto chunk_buff = poarchive->get_intrusive_buffer();
-      blist.back().write(chunk_buff.data_, chunk_buff.size_);
+      blist.back().write(chunk_buff.data_, chunk_buff.size_); /// 将某个线程的消息buffer汇总(flush)到partition的消息buffer
 
-      if (blist.back().size() > opts.global_size_) {  // start a new ISend
+      if (blist.back().size() > opts.global_size_) {  // start a new ISend /// 消息已满,可以发送
         mem_ostream_t oss(std::move(blist.back()));
         auto& reqlck  = reqlck_vec[p_i];
         auto& reqlist = flying_requests_vec[p_i];
@@ -424,13 +425,13 @@ int bsp (
             &reqlist.back().first);
         reqlck.unlock();
       } else {
-        buflck.unlock();
+        buflck.unlock(); /// 消息未满,无事可做,释放🔒
       }
 
-      poarchive->reset();
+      poarchive->reset(); /// thread的msg buffer已经追加到partition的buffer里了
     };
 
-    auto send_callback = [&](int p_i, const MSG& msg) {
+    auto send_callback = [&](int p_i, const MSG& msg) { /// 将msg暂存到thread的buffer
       oarchives_vec[p_i]->emit(msg);
       if (oarchives_vec[p_i]->count() >= opts.local_capacity_) {  // flush oarchive, use size() will hurt performance
         flush_local(p_i);
@@ -438,20 +439,20 @@ int bsp (
       return true;
     };
 
-    send_task(send_callback);
+    send_task(send_callback); /// 各个线程同时开始send_task
 
-    for (int p_i = 0; p_i < cluster_info.partitions_; ++p_i) {
+    for (int p_i = 0; p_i < cluster_info.partitions_; ++p_i) { /// 收尾工作
       if (oarchives_vec[p_i]->count()) {
         flush_local(p_i);
       }
     }
   }
 
-  continued.store(false);
+  continued.store(false); /// send_assist_thread停止工作!
   send_assist_thread.join();
 
   {  // flush global
-    for (int p_i = 0; p_i < cluster_info.partitions_; ++p_i) {
+    for (int p_i = 0; p_i < cluster_info.partitions_; ++p_i) { /// 进程flush buffer
       auto& reqlist = flying_requests_vec[p_i];
 
       for (auto& oss: global_sndbuf_vec[p_i]) {
@@ -473,7 +474,7 @@ int bsp (
         requests_vec.emplace_back(request.first);
       }
 
-      CHECK(MPI_SUCCESS == MPI_Waitall(requests_vec.size(), requests_vec.data(), MPI_STATUSES_IGNORE));
+      CHECK(MPI_SUCCESS == MPI_Waitall(requests_vec.size(), requests_vec.data(), MPI_STATUSES_IGNORE)); /// block until all msg send success
     }
   }
 
@@ -504,8 +505,8 @@ int bsp (
  **/
 template <typename MSG>
 int fine_grain_bsp (
-  bsp_send_task_t<MSG> send_task,
-  bsp_recv_task_t<MSG> recv_task,
+  bsp_send_task_t<MSG> send_task, /// std::function<void(bsp_send_callback_t<MSG>)>;
+  bsp_recv_task_t<MSG> recv_task, /// std::function<void(int, bsp_recv_pmsg_t<MSG>&)>;
   bsp_opts_t opts = bsp_opts_t(),
   std::function<void(void)> before_recv_task = bsp_detail::dummy_func,
   std::function<void(void)> after_recv_task  = bsp_detail::dummy_func) {
@@ -532,6 +533,7 @@ int fine_grain_bsp (
     chunk_left[r_i].store(0);
   }
 
+  /// produce msg
   std::thread recv_assist_thread([&](void) {
     std::atomic<int>         finished_count(0);
     std::vector<bool>        processing(opts.flying_recv_, false);
@@ -638,6 +640,7 @@ int fine_grain_bsp (
 
   std::atomic<int> cpus(0);
 
+  /// consume msg
   std::thread recv_thread ([&](void) {
     #pragma omp parallel num_threads(opts.threads_)
     {
@@ -671,7 +674,7 @@ int fine_grain_bsp (
           while (chunk_queue.try_dequeue(chunk)) {
             iarchive_spec_t iarchive(chunk.data_, chunk.size_, chunk.count_);
             for (auto msg = iarchive.absorb(); nullptr != msg; msg = iarchive.absorb()) {
-              recv_task(chunk.from_, msg);
+              recv_task(chunk.from_, msg); /// consume msg
             }
             --chunk_left[chunk.index_];
 
@@ -798,7 +801,7 @@ int fine_grain_bsp (
       ++cpus;
 
       if (should_sleep) {
-        poll(nullptr, 0, 1);
+        poll(nullptr, 0, 1); /// sleep 1ms
       } else {
         pthread_yield();
       }
