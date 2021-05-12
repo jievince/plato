@@ -215,7 +215,7 @@ protected:
  */
 template <typename MSG>
 int bsp (
-    bsp_buffer_t* precv_buff, /// no recv_task, all received msg will be cached to predv_buff, and will be used in bsp() caller.
+    bsp_buffer_t* precv_buff, /// no recv_task, all received msg will be cached to precv_buff, and will be used in bsp() caller.
     bsp_send_task_t<MSG> send_task,
     bsp_opts_t opts = bsp_opts_t()) {
 
@@ -253,7 +253,7 @@ int bsp (
     std::vector<MPI_Request> requests_vec(cluster_info.partitions_, MPI_REQUEST_NULL);
 
     for (size_t i = 0; i < requests_vec.size(); ++i) {
-      int recv_bytes = (int)std::min(max_recv_size, cache_size - recv_buff[i].second);
+      int recv_bytes = (int)std::min(max_recv_size, cache_size - recv_buff[i].second); /// cache是缓存区最大容量, max_recv_size是一次最多接收的消息大小.
       MPI_Irecv(recv_buff[i].first.get(), recv_bytes, MPI_CHAR, i, MPI_ANY_TAG, opts.comm_, &requests_vec[i]);
     }
 
@@ -278,7 +278,7 @@ int bsp (
 
           recv_bytes = (int)std::min(max_recv_size, cache_size - recv_buff[index].second);
           CHECK(recv_bytes > 0) << "recv_buff is full with cache_size: " << cache_size << "bytes";
-          MPI_Irecv(&(recv_buff[index].first.get()[recv_buff[index].second]), recv_bytes, MPI_CHAR,
+          MPI_Irecv(&(recv_buff[index].first.get()[recv_buff[index].second]), recv_bytes, MPI_CHAR, /// 持续发请求,知道读完所有数据, 直到ShuffleFin
               index, MPI_ANY_TAG, opts.comm_, &requests_vec[index]);
         }
         MPI_Testany(requests_vec.size(), requests_vec.data(), &index, &flag, &status);
@@ -296,7 +296,8 @@ int bsp (
         poll(nullptr, 0, 1); /// sleep 1ms
         idle_times = 0;
       } else if (false == busy) {
-        pthread_yield(); /// pthread_yield 使当前的线程自动放弃剩余的CPU时间从而让另一个线程运行
+        /// pthread_yield() causes the calling thread to relinquish the CPU. The thread is placed at the end of the run queue for its static priority and another thread is scheduled to run
+        pthread_yield();
       }
     }
     probe_once();
@@ -304,7 +305,7 @@ int bsp (
     for (size_t r_i = 0; r_i < requests_vec.size(); ++r_i) {
       if (MPI_REQUEST_NULL != requests_vec[r_i]) {
         MPI_Cancel(&requests_vec[r_i]);
-        MPI_Wait(&requests_vec[r_i], MPI_STATUS_IGNORE);
+        MPI_Wait(&requests_vec[r_i], MPI_STATUS_IGNORE); /// 同步wait
       }
     }
   });
@@ -348,19 +349,19 @@ int bsp (
 
         if (flag) {
           auto& it = requests_it_vec[idx];
-          mem_ostream_t oss(std::move(it->second));
+          mem_ostream_t oss(std::move(it->second)); /// 异步请求发送完毕, 存储消息的oss可以释放了
 
           reqlck.lock();
           reqlist.erase(it);
           reqlck.unlock();
 
-          oss.reset();
+          oss.reset(); /// 重置数据(相当于清除数据了), beg=cur=0, 下次append数据时就从0开始了
 
           auto& buflck = buflck_vec[p_i];
           auto& blist  = global_sndbuf_vec[p_i];
 
           buflck.lock();
-          blist.emplace_back(std::move(oss));
+          blist.emplace_back(std::move(oss)); /// 同时最多往同一台机器发送flying_send_per_node_个请求
           buflck.unlock();
 
           busy = true;
@@ -439,7 +440,7 @@ int bsp (
       return true;
     };
 
-    send_task(send_callback); /// 各个线程同时开始send_task
+    send_task(send_callback); /// 各个线程同时开始send_task, while (actives.next_chunk(rebind_traversal, &chunk_size)) 知道actives被遍历完
 
     for (int p_i = 0; p_i < cluster_info.partitions_; ++p_i) { /// 收尾工作
       if (oarchives_vec[p_i]->count()) {
@@ -473,7 +474,7 @@ int bsp (
       for (auto& request: reqlist) {
         requests_vec.emplace_back(request.first);
       }
-
+      /// 同步wait!!!
       CHECK(MPI_SUCCESS == MPI_Waitall(requests_vec.size(), requests_vec.data(), MPI_STATUSES_IGNORE)); /// block until all msg send success
     }
   }
@@ -486,7 +487,7 @@ int bsp (
   MPI_Barrier(opts.comm_);
 
   return 0;
-}
+} /// 并行域结束的地方应该会有同步屏障barriar
 
 /*
  * resource-limited bulk synchronous parallel computation model
