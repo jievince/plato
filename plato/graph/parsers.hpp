@@ -338,10 +338,10 @@ ssize_t nebula_scanner(nebula::StorageClient &client, std::string &spaceName,
       auto &vals = row.values;
       CHECK(vals.size() >= 2) << "vals.size() < 2";
       auto src = vals[0].getInt();
-      CHECK(src <= std::numeric_limits<VID_T>::max()) << "src: " << src << " exceed max value";
+      // CHECK(src <= std::numeric_limits<VID_T>::max()) << "src: " << src << " exceed max value";
       buffer[count].src_ = src;
       auto dst = vals[1].getInt();
-      CHECK(dst <= std::numeric_limits<VID_T>::max()) << "dst: " << dst << " exceed max value";
+      // CHECK(dst <= std::numeric_limits<VID_T>::max()) << "dst: " << dst << " exceed max value";
       buffer[count].dst_ = dst;
       if (3 == valid_splits) {
         CHECK(vals.size() >= 3) << "vals.size() < 3";

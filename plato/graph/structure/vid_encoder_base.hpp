@@ -27,7 +27,6 @@
 #include "plato/graph/base.hpp"
 #include "plato/graph/message_passing.hpp"
 #include "plato/graph/structure/edge_cache.hpp"
-#include "plato/graph/structure/vid_encoded_cache.hpp"
 #include "plato/util/perf.hpp"
 
 namespace plato {

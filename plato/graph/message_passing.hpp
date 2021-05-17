@@ -149,30 +149,6 @@ R aggregate_message (
 // ******************************************************************************* //
 // spread message
 
-template <typename VID_T>
-struct mepa_sd_vid_encoder_message_t {
-  VID_T v_i_;
-  size_t idx_;
-  bool is_src_;
-
-  template<typename Ar>
-  void serialize(Ar &ar) {
-    ar & v_i_ & idx_ & is_src_;
-  }
-};
-
-template <>
-struct mepa_sd_vid_encoder_message_t<vid_t> {
-  vid_t v_i_;
-  size_t idx_;
-  bool is_src_;
-
-  template<typename Ar>
-  void serialize(Ar &ar) {
-    ar & v_i_ & idx_ & is_src_;
-  }
-};
-
 template <typename MSG>
 using mepa_sd_send_callback_t = std::function<void(int, const MSG&)>;
 
@@ -184,7 +160,7 @@ struct mepa_sd_context_t { /// sd means spread
 template <typename MSG, typename R>
 using mepa_sd_sink_t = std::function<R(MSG&)>;
 
-namespace {
+namespace bind_task_detail {
 
 template <typename F, typename T>
 struct rebind_send_task {
@@ -242,7 +218,7 @@ R spread_message (
     mepa_sd_context_t<MSG> context { send_callback };
 
     size_t chunk_size = bsp_opts.local_capacity_;
-    auto rebind_traversal = bind_send_task(std::forward<SPREAD_FUNC>(spread_task),
+    auto rebind_traversal = bind_task_detail::bind_send_task(std::forward<SPREAD_FUNC>(spread_task),
         std::forward<mepa_sd_context_t<MSG>>(context));
     while (actives.next_chunk(rebind_traversal, &chunk_size)) { }
   };
@@ -328,7 +304,7 @@ R broadcast_message (
     mepa_bc_context_t<MSG> context { send_callback };
 
     size_t chunk_size = bc_opts.local_capacity_;
-    auto rebind_traversal = bind_send_task(std::forward<SPREAD_FUNC>(spread_task),
+    auto rebind_traversal = bind_task_detail::bind_send_task(std::forward<SPREAD_FUNC>(spread_task),
         std::forward<mepa_bc_context_t<MSG>>(context));
     while (actives.next_chunk(rebind_traversal, &chunk_size)) { }
   };

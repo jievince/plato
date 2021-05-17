@@ -61,7 +61,7 @@ namespace plato {
 
 struct bsp_opts_t {
   int      threads_               = -1;           // -1 means all available threads
-  int      flying_send_per_node_  = 3;
+  int      flying_send_per_node_  = 3; /// 同时最多向某个node发flying_send_per_node_个请求
   int      flying_recv_           = -1;
   uint32_t global_size_           = 16 * MBYTES;  // at most global_size_ bytes will be cached
                                                   // per one request
@@ -563,7 +563,7 @@ int fine_grain_bsp (
             CHECK(recv_bytes >= static_cast<int>(sizeof(chunk_tail_t))) << "recv message too small: " << recv_bytes;
 
             while (recv_bytes > 0) {  // push task in queue
-              chunk_tail_t* tail = (chunk_tail_t*)(&buff[recv_bytes - sizeof(chunk_tail_t)]);
+              chunk_tail_t* tail = (chunk_tail_t*)(&buff[recv_bytes - sizeof(chunk_tail_t)]); /// chunk是首尾相接的
               CHECK(tail->size_ >= sizeof(chunk_tail_t));
               char* data = &buff[recv_bytes] - tail->size_;
 
@@ -575,7 +575,7 @@ int fine_grain_bsp (
             CHECK(0 == recv_bytes);
           }
           requests_vec[index] = MPI_REQUEST_NULL;
-          processing[index] = true;
+          processing[index] = true; /// processing记录是否还有msg没有被consume, 有新消息到来说明就还需要被process
 
           has_message = true;
           if (false == continued) { break; }
@@ -592,7 +592,7 @@ int fine_grain_bsp (
         if (processing[i] && (0 == chunk_left[i].load())) {
           found = true;
           processing[i] = false;
-          MPI_Irecv(buffs_vec[i].get(), buff_size, MPI_CHAR, MPI_ANY_SOURCE,
+          MPI_Irecv(buffs_vec[i].get(), buff_size, MPI_CHAR, MPI_ANY_SOURCE, /// 上一个请求的msg已经被consume了,可以接收下一个请求了
               MPI_ANY_TAG, opts.comm_, &requests_vec[i]);
         }
       }
@@ -602,7 +602,7 @@ int fine_grain_bsp (
     uint32_t idle_times = 0;
     while (finished_count < cluster_info.partitions_) {
       bool busy = probe_once(false);
-      busy = restart_once() || busy;
+      busy = restart_once() || busy; /// 有新消息到来或者有处理完的请求
 
       idle_times += (uint32_t)(false == busy);
       if (idle_times > 10) {
@@ -626,8 +626,8 @@ int fine_grain_bsp (
           busy = true;
         }
       }
-      if (busy) { poll(nullptr, 0, 1); }
-    } while (busy);
+      if (busy) { poll(nullptr, 0, 1); } /// why not pthread_yield()?
+    } while (busy); /// busy==false: 没有新消息到来或者已有的请求都被处理完
 
     for (size_t r_i = 0; r_i < requests_vec.size(); ++r_i) {
       if (MPI_REQUEST_NULL != requests_vec[r_i]) {
@@ -694,10 +694,10 @@ int fine_grain_bsp (
         idles += (uint32_t)(false == probe_once(opts.batch_size_));
 
         if (idles > 3) {
-          yeild(true, true);
+          yeild(true, true); /// sleep
           idles = 0;
         } else {
-          yeild(true, false);
+          yeild(true, false); /// pthread_yield
         }
       }
       after_recv_task();

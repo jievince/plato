@@ -26,7 +26,6 @@
 #include "plato/graph/base.hpp"
 #include "plato/graph/structure/vid_encoder_base.hpp"
 #include "plato/graph/structure/edge_cache.hpp"
-#include "plato/graph/structure/vid_encoded_cache.hpp"
 #include "plato/graph/message_passing.hpp"
 #include "libcuckoo/cuckoohash_map.hh"
 #include "plato/util/perf.hpp"

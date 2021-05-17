@@ -38,29 +38,6 @@ cc_library (
 )
 
 cc_library (
-    name = "vid_encoded_cache",
-    hdrs = [
-        "vid_encoded_cache.hpp",
-    ],
-    srcs = [ ],
-    includes = [ ".", ],
-    deps = [
-        "//3rd/glog:glog",
-        "//3rd/gflags:gflags",
-
-        "//plato/graph:base",
-        "//plato/util:object_buffer",
-        "//plato/util:mmap_alloc",
-        "//plato/graph:message_passing",
-
-        ":detail",
-    ],
-    copts = [ '-O2', '-Wall', '-std=c++11', ] + PLATO_OPTS,
-    linkopts = [ ] + PLATO_OPTS,
-    visibility = ["//visibility:public"],
-)
-
-cc_library (
     name = "bcsr",
     hdrs = [
         "bcsr.hpp",

@@ -88,7 +88,6 @@ cc_library (
         "//plato/graph/structure:dcsc",
         "//plato/graph/structure:tcsr",
         "//plato/graph/structure:edge_cache",
-        "//plato/graph/structure:vid_encoded_cache",
         "//plato/graph/structure:vid_encoder_base",
         "//plato/graph/structure:vid_encoder",
         "//plato/graph/structure:distributed_vid_encoder",

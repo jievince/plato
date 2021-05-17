@@ -60,7 +60,6 @@
 #include "plato/graph/structure/dcsc.hpp"
 #include "plato/graph/structure/tcsr.hpp"
 #include "plato/graph/structure/edge_cache.hpp"
-#include "plato/graph/structure/vid_encoded_cache.hpp"
 #include "plato/graph/partition/hash.hpp"
 #include "plato/graph/partition/dummy.hpp"
 #include "plato/graph/partition/sequence.hpp"
@@ -229,7 +228,7 @@ void read_from_nebula(
   data_callback_t<EDATA, VID_T> callback) {
 
   auto& cluster_info = cluster_info_t::get_instance();
-  nebula_scanner_t<EDATA, VID_T> scanner = nebula_scanner<EDATA, VID_T>;
+  nebula_scanner_t<EDATA, VID_T>  scanner = nebula_scanner<EDATA, VID_T>;
 
   std::string pathPrefix = "nebula:";
   CHECK(boost::istarts_with(path, pathPrefix)) << "invalid nebula config path: " << path;

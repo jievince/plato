@@ -26,7 +26,6 @@
 #include "plato/graph/base.hpp"
 #include "plato/graph/structure/vid_encoder_base.hpp"
 #include "plato/graph/structure/edge_cache.hpp"
-#include "plato/graph/structure/vid_encoded_cache.hpp"
 #include "plato/graph/message_passing.hpp"
 #include "libcuckoo/cuckoohash_map.hh"
 #include "plato/util/perf.hpp"
@@ -34,7 +33,33 @@
 
 namespace plato {
 
-template <typename EDATA, typename VID_T = vid_t, template<typename, typename> class CACHE = edge_block_cache_t, template<typename> class ENCODED_CACHE = vid_encoded_block_cache_t>
+template <typename VID_T>
+struct vid_encoder_message_t {
+  VID_T v_i_;
+  size_t idx_;
+  bool is_src_;
+  int from_;
+
+  template<typename Ar>
+  void serialize(Ar &ar) {
+    ar & v_i_ & idx_ & is_src_ & from_;
+  }
+};
+
+template <>
+struct vid_encoder_message_t<vid_t> {
+  vid_t v_i_;
+  size_t idx_;
+  bool is_src_;
+  int from_;
+
+  template<typename Ar>
+  void serialize(Ar &ar) {
+    ar & v_i_ & idx_ & is_src_ & from_;
+  }
+};
+
+template <typename EDATA, typename VID_T = vid_t, template<typename, typename> class CACHE = edge_block_cache_t>
 class distributed_vid_encoder_t : public vid_encoder_base_t<EDATA, VID_T, CACHE>{
 public:
   using encoder_callback_t = std::function<bool(edge_unit_t<EDATA, vid_t>*, size_t)>;
@@ -82,9 +107,9 @@ private:
   vid_encoder_opts_t opts_;
 };
 
-template <typename EDATA, typename VID_T, template<typename, typename> class CACHE, template<typename> class ENCODED_CACHE>
-void distributed_vid_encoder_t<EDATA, VID_T, CACHE, ENCODED_CACHE>::encode(CACHE<EDATA, VID_T>& cache,
-                                                encoder_callback_t callback) {
+template <typename EDATA, typename VID_T, template<typename, typename> class CACHE>
+void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>& cache,
+                                                            encoder_callback_t callback) {
   using cuckoomap_t = cuckoohash_map<VID_T, vid_t, std::hash<VID_T>, std::equal_to<VID_T>,
     std::allocator<std::pair<const VID_T, vid_t> > >;
   using locked_table_t = typename cuckoomap_t::locked_table;
@@ -95,7 +120,8 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE, ENCODED_CACHE>::encode(CACHE
   watch.mark("t0");
   watch.mark("t1");
   std::unique_ptr<locked_table_t> lock_table;
-  vid_t vertex_size;
+  vid_t local_vertex_size;
+
 
   {
     cuckoomap_t table;
@@ -126,8 +152,8 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE, ENCODED_CACHE>::encode(CACHE
       }
     );
 
-    vertex_size = table.size();
-    local_ids_.resize(vertex_size);
+    local_vertex_size = table.size();
+    local_ids_.resize(local_vertex_size);
     // get all vertex id from local hash table
     lock_table.reset(new locked_table_t(std::move(table.lock_table())));
     iterator_t it = lock_table->begin();
@@ -142,12 +168,12 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE, ENCODED_CACHE>::encode(CACHE
     LOG(INFO) << "transfer bit cost: " << watch.show("t1") / 1000.0;
   }
   watch.mark("t1");
-  LOG(INFO) << "pid: " << cluster_info.partition_id_ << " local vertex size: " << vertex_size;
+  LOG(INFO) << "pid: " << cluster_info.partition_id_ << " local vertex size: " << local_vertex_size;
   std::vector<vid_t> local_sizes(cluster_info.partitions_);
-  MPI_Allgather(&vertex_size, 1, get_mpi_data_type<vid_t>(), &local_sizes[0], 1, get_mpi_data_type<vid_t>(), MPI_COMM_WORLD);
+  MPI_Allgather(&local_vertex_size, 1, get_mpi_data_type<vid_t>(), &local_sizes[0], 1, get_mpi_data_type<vid_t>(), MPI_COMM_WORLD);
 
   vid_t global_vertex_size;
-  MPI_Allreduce(&vertex_size, &global_vertex_size, 1, get_mpi_data_type<vid_t>(), MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(&local_vertex_size, &global_vertex_size, 1, get_mpi_data_type<vid_t>(), MPI_SUM, MPI_COMM_WORLD);
   if (0 == cluster_info.partition_id_) {
     for (size_t i = 0; i < local_sizes.size(); ++i) {
       LOG(INFO) << "partition_" << i << ", local vertex size: " << local_sizes[i];
@@ -162,10 +188,10 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE, ENCODED_CACHE>::encode(CACHE
   }
 
   watch.mark("t1");
-  cuckoomap_t id_table(vertex_size * 1.2);
+  cuckoomap_t id_table(local_vertex_size * 1.2);
   #pragma omp parallel for num_threads(cluster_info.threads_)
-  for (vid_t i = 0; i < vertex_size; ++i) {
-    id_table.upsert(local_ids_[i], [](vid_t&){ }, i);
+  for (vid_t i = 0; i < local_vertex_size; ++i) {
+    id_table.upsert(local_ids_[i], [](vid_t&){ }, i + local_sizes[cluster_info.partition_id_]);
   }
 
   lock_table.reset(new locked_table_t(std::move(id_table.lock_table())));
@@ -174,79 +200,102 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE, ENCODED_CACHE>::encode(CACHE
   }
 
   watch.mark("t1");
+  
+  using vid_to_encode_msg_t = vid_encoder_message_t<VID_T>;
+  using vid_encoded_msg_t = vid_encoder_message_t<vid_t>;
+  moodycamel::ConcurrentQueue<vid_encoded_msg_t>  encoded_msg_queue;
+  std::atomic<bool> process_continue(true);
 
-  traverse_opts_t traverse_opts;
-  traverse_opts.auto_release_ = true;
-  cache.reset_traversal(traverse_opts);
-  std::thread thread1 ([&](void) {
-    std::vector<edge_unit_t<EDATA, vid_t>> items(HUGESIZE); /// shoule be resized to size of local edges
-    std::atomic<size_t> k(0);
+  std::vector<edge_unit_t<EDATA, vid_t>> items(HUGESIZE); /// shoule be resized to size of local edges
+  std::atomic<size_t> k(0);
+
+  std::thread assist_thread ([&] {
+    // 发送编码结果, 接收编码结果
+    // auto& cluster_info = cluster_info_t::get_instance();
+
+    auto __send = [&](bsp_send_callback_t<vid_encoded_msg_t> send) { /// 发送编码结果
+      vid_encoded_msg_t encoded_msg;
+      while (process_continue.load()) {
+        if (encoded_msg_queue.try_dequeue(encoded_msg)) {
+          send(encoded_msg.from_, encoded_msg);
+        }
+      }
+    };
+
+    auto __recv = [&](int, bsp_recv_pmsg_t<vid_encoded_msg_t>& pmsg) { /// 接收编码结果
+      if (pmsg->is_src_) {
+        items[pmsg->idx_].src_ = pmsg->v_i_;
+      } else {
+        items[pmsg->idx_].dst_ = pmsg->v_i_;
+      }
+    };
+
+    bsp_opts_t bsp_opts;
+    // bsp_opts.global_size_    = 64 * MBYTES;
+    // bsp_opts.local_capacity_ = 32 * PAGESIZE;
+
+    fine_grain_bsp<vid_encoded_msg_t>(__send, __recv, bsp_opts);
+  });
+
+  {
     using edge_unit_spec_t = edge_unit_t<EDATA, VID_T>;
-    using vid_encoder_msg_t = mepa_sd_vid_encoder_message_t<VID_T>;
-    using push_context_t = plato::template mepa_sd_context_t<vid_encoder_msg_t>;
-    spread_message<vid_encoder_msg_t, vid_t>(
-      cache,
-      [&](const push_context_t& context, size_t i, edge_unit_spec_t *edge) { /// 发送编码请求
+    using push_context_t = plato::template mepa_sd_context_t<vid_to_encode_msg_t>;
+
+    traverse_opts_t traverse_opts;
+    traverse_opts.auto_release_ = true;
+    cache.reset_traversal(traverse_opts);
+
+    bsp_opts_t bsp_opts;
+    // bsp_opts.global_size_    = 64 * MBYTES;
+    // bsp_opts.local_capacity_ = 32 * PAGESIZE;
+    
+    auto spread_task = [&](const push_context_t& context, size_t i, edge_unit_spec_t *edge) { /// 发送编码请求--> 发送读cache的ShuffleFin
         size_t idx = k.fetch_add(1, std::memory_order_relaxed);
         items[idx].edata_ = edge->edata_;
         if (opts_.src_need_encode_) {
-            auto send_to = murmur_hash2(&(edge->src_), edge->src.size()) % cluster_info.partitions_;
-            context.send(send_to, edge->src_);
+          auto send_to = murmur_hash2(&(edge->src_), sizeof(edge->src_)) %
+                         cluster_info.partitions_;
+          auto to_encode_msg = vid_to_encode_msg_t{edge->src_, k, true, cluster_info.partition_id_};
+          context.send(send_to, to_encode_msg);
         } else {
           items[idx].src_ = edge->src_;
         }
         if (opts_.dst_need_encode_) {
-            auto send_to = murmur_hash2(&(edge->dst_), edge->dst.size()) % cluster_info.partitions_;
-            context.send(send_to, edge->dst_);
+          auto send_to = murmur_hash2(&(edge->dst_), sizeof(edge->dst_)) %
+                         cluster_info.partitions_;
+          auto to_encode_msg = vid_to_encode_msg_t{edge->dst_, k, false, cluster_info.partition_id_};
+          context.send(send_to, to_encode_msg);
         } else {
           items[idx].dst_ = edge->dst_;
         }
-      },
-      [&](vid_encoder_msg_t& msg) { /// 接收编码结果
-        if (msg.is_src_) {
-          items[msg.idx_].src_ = msg.v_i_;
-        } else {
-          items[msg.idx_].dst_ = msg.v_i_;
-        }
-        return 0;
-      }
-    );
-  });
+    };
 
-  // std::thread thread2 ([&](void) { 
-  //   std::shared_ptr<ENCODED_CACHE<vid_t>> encoded_cache(new CACHE<EDATA, vid_t>());
-  //   std::vector<edge_unit_t<EDATA, vid_t>> items(HUGESIZE);
-  //   using vid_encoder_msg_t = mepa_sd_vid_encoder_message_t<vid_t>;
-  //   using push_context_t = plato::template mepa_sd_context_t<vid_encoder_msg_t>;
-  //   spread_message<vid_encoder_msg_t, vid_t>(
-  //     encoded_cache,
-  //     [&](const push_context_t& context, size_t i, vid_encoder_msg_t *encoder_msg) { /// 发送编码结果
+    auto __send = [&](bsp_send_callback_t<vid_to_encode_msg_t> send) {
+      auto send_callback = [&](int node, const vid_to_encode_msg_t& message) {
+        send(node, message);
+      };
 
-  //       if (opts_.src_need_encode_) {
-  //           auto send_to = murmur_hash2(&(edge->src_), edge->src.size()) % cluster_info.partitions_;
-  //           context.send(send_to, edge->src_);
-  //       } else {
-  //         items[idx].src_ = edge->src_;
-  //       }
-  //       if (opts_.dst_need_encode_) {
-  //           auto send_to = murmur_hash2(&(edge->dst_), edge->dst.size()) % cluster_info.partitions_;
-  //           context.send(send_to, edge->dst_);
-  //       } else {
-  //         items[idx].dst_ = edge->dst_;
-  //       }
-  //     },
-  //     [&](vid_encoder_msg_t& msg) { /// 接收编码请求
-  //       if (msg.is_src_) {
-  //         items[msg.idx_].src_ = msg.v_i_;
-  //       } else {
-  //         items[msg.idx_].dst_ = msg.v_i_;
-  //       }
-  //       return 0;
-  //     }
-  //   );
-  // });
+      mepa_sd_context_t<vid_to_encode_msg_t> context { send_callback };
 
+      size_t chunk_size = bsp_opts.local_capacity_;
+      auto rebind_traversal = bind_task_detail::bind_send_task(std::move(spread_task),
+          std::move(context));
+      while (cache.next_chunk(rebind_traversal, &chunk_size)) { }
+    };
 
+    auto __recv = [&](int p_i, bsp_recv_pmsg_t<vid_to_encode_msg_t>& pmsg) {
+        encoded_msg_queue.enqueue(vid_encoded_msg_t { lock_table->at(pmsg->v_i_), pmsg->idx_, pmsg->is_src_, pmsg->from_ });
+    };
+
+    auto __after_recv_task = [&](void) {
+      process_continue.store(false);
+    };
+
+    fine_grain_bsp<vid_to_encode_msg_t>(__send, __recv, bsp_opts, bsp_detail::dummy_func, __after_recv_task);
+  }
+
+  assist_thread.join();
+  callback(&items[0], items.size());
   lock_table.reset(nullptr);
   if (0 == cluster_info.partition_id_) {
     LOG(INFO) << "get encode cache cost: " << watch.show("t1") / 1000.0;
