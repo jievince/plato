@@ -34,7 +34,7 @@
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
-  // google::LogToStderr();
+  google::LogToStderr();
 }
 
 const size_t kMaxIdx = 64000000;

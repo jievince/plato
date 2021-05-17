@@ -54,7 +54,7 @@ DEFINE_validator(input,  &string_not_empty);
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
-  // google::LogToStderr();
+  google::LogToStderr();
 }
 
 using partition_t = plato::hash_by_source_t<>;

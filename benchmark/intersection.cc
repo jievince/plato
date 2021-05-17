@@ -105,7 +105,7 @@ DEFINE_validator(density, [] (const char*, double density) {return density <= 1;
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
-  // google::LogToStderr();
+  google::LogToStderr();
 }
 
 template <typename T>

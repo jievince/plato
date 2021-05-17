@@ -60,7 +60,7 @@ DEFINE_validator(sum_items_num,  [] (const char*, uint64_t value) { return value
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
-  // google::LogToStderr();
+  google::LogToStderr();
 }
 
 using edge_t = plato::empty_t;

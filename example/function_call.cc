@@ -34,7 +34,7 @@ DEFINE_string(type,  "all",   "'inline', 'lambda', 'function' or 'all'");
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
-  // google::LogToStderr();
+  google::LogToStderr();
 }
 
 static uint64_t s_count = 0;

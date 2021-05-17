@@ -512,7 +512,7 @@ int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
 
   google::InitGoogleLogging("graphkit-test");
-  // google::LogToStderr();
+  google::LogToStderr();
 
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 

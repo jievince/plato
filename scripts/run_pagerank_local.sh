@@ -32,8 +32,15 @@ export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$ROOT_DIR/3rd/hadoop2/lib
 # output dir
 mkdir -p $OUTPUT
 
+# create log dir if it doesn't exist
+LOG_DIR=$ROOT_DIR/logs
+if [ -d ${LOG_DIR} ]; then
+    rm -rf $LOG_DIR
+fi
+mkdir -p ${LOG_DIR}
+
 # run
-${MPIRUN_CMD} -n ${WNUM} ${MAIN} ${PARAMS}
+${MPIRUN_CMD} -n ${WNUM} ${MAIN} ${PARAMS} --log_dir=$LOG_DIR
 
 echo ">>>>>>>>>>>output>>>>>>>>>>>>>>"
 ls -lh $OUTPUT
