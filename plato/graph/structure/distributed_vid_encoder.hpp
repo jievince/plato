@@ -159,6 +159,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
     iterator_t it = lock_table->begin();
     for (size_t i = 0; lock_table->end() != it; ++i, ++it) {
       local_ids_[i] = it->first;
+      LOG(INFO) << "local_ids_[" << i << "]=" << local_ids_[i];
     }
 
     lock_table.reset(nullptr);
@@ -184,17 +185,21 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
   local_vid_offset_.resize(cluster_info.partitions_+1, 0);
   for (int i = 0; i <= cluster_info.partitions_; ++i) {
     if (i > 0) local_vid_offset_[i] = local_sizes[i - 1] + local_vid_offset_[i - 1];
-    LOG(INFO) << "local_vid_offset_[" << i << "] " << local_vid_offset_[i];
+    LOG(INFO) << "local_vid_offset_[" << i << "]=" << local_vid_offset_[i];
   }
 
   watch.mark("t1");
   cuckoomap_t id_table(local_vertex_size * 1.2);
   #pragma omp parallel for num_threads(cluster_info.threads_)
   for (vid_t i = 0; i < local_vertex_size; ++i) {
-    id_table.upsert(local_ids_[i], [](vid_t&){ }, i + local_sizes[cluster_info.partition_id_]);
+    id_table.upsert(local_ids_[i], [](vid_t&){ }, i + local_vid_offset_[cluster_info.partition_id_]);
   }
 
   lock_table.reset(new locked_table_t(std::move(id_table.lock_table())));
+  iterator_t it = lock_table->begin();
+  for (size_t i = 0; lock_table->end() != it; ++i, ++it) {
+    LOG(INFO) << "lock_table(id_table), NO." << i << "=" << it->first;
+  }
   if (0 == cluster_info.partition_id_) {
     LOG(INFO) << "get all id table cost: " << watch.show("t1") / 1000.0;
   }
@@ -210,42 +215,42 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
   std::atomic<size_t> k(0);
 
   LOG(INFO) << "------------------- assist_thread_start";
-  std::thread assist_thread ([&] {
-    // 发送编码结果, 接收编码结果
-    // auto& cluster_info = cluster_info_t::get_instance();
+  // std::thread assist_thread ([&] {
+  //   // 发送编码结果, 接收编码结果
+  //   // auto& cluster_info = cluster_info_t::get_instance();
 
-    auto __send = [&](bsp_send_callback_t<vid_encoded_msg_t> send) { /// 发送编码结果
-      vid_encoded_msg_t encoded_msg;
-      LOG(INFO) << "-------------assist_thread, process_continue start: " << process_continue.load();
-      while (process_continue.load()) {
-        if (encoded_msg_queue.try_dequeue(encoded_msg)) {
-          LOG(INFO) << "------------assist_thread, try dequeued a encded_msg" << "v_i_: " << encoded_msg.v_i_ << " idx_: " << encoded_msg.idx_ << " is_src_: " << encoded_msg.is_src_ << " from_: " << encoded_msg.from_;
-          send(encoded_msg.from_, encoded_msg);
-        } else {
-          //LOG(INFO) << "------------assist_thread, try dequeued failed...";
-        }
-      }
-      LOG(INFO) << "-------------assist_thread, process_continue end: " << process_continue.load();
-    };
+  //   auto __send = [&](bsp_send_callback_t<vid_encoded_msg_t> send) { /// 发送编码结果
+  //     vid_encoded_msg_t encoded_msg;
+  //     LOG(INFO) << "-------------assist_thread, process_continue start: " << process_continue.load();
+  //     while (process_continue.load()) {
+  //       if (encoded_msg_queue.try_dequeue(encoded_msg)) {
+  //         LOG(INFO) << "------------assist_thread, try dequeued a encded_msg" << "v_i_: " << encoded_msg.v_i_ << " idx_: " << encoded_msg.idx_ << " is_src_: " << encoded_msg.is_src_ << " from_: " << encoded_msg.from_;
+  //         send(encoded_msg.from_, encoded_msg);
+  //       } else {
+  //         //LOG(INFO) << "------------assist_thread, try dequeued failed...";
+  //       }
+  //     }
+  //     LOG(INFO) << "-------------assist_thread, process_continue end: " << process_continue.load();
+  //   };
 
-    auto __recv = [&](int, bsp_recv_pmsg_t<vid_encoded_msg_t>& pmsg) { /// 接收编码结果
-      if (pmsg->is_src_) {
-        LOG(INFO) << "-----------assist_thread, __recv src: " << "v_i_: " << pmsg->v_i_ << " idx_: " << pmsg->idx_ << " is_src_: " << pmsg->is_src_ << " from_: " << pmsg->from_;
-        items[pmsg->idx_].src_ = pmsg->v_i_;
-      } else {
-        LOG(INFO) << "------------assist_thread, __recv dst: " << "v_i_: " << pmsg->v_i_ << " idx_: " << pmsg->idx_ << " is_src_: " << pmsg->is_src_ << " from_: " << pmsg->from_;
-        items[pmsg->idx_].dst_ = pmsg->v_i_;
-      }
-    };
+  //   auto __recv = [&](int, bsp_recv_pmsg_t<vid_encoded_msg_t>& pmsg) { /// 接收编码结果
+  //     if (pmsg->is_src_) {
+  //       LOG(INFO) << "-----------assist_thread, __recv src: " << "v_i_: " << pmsg->v_i_ << " idx_: " << pmsg->idx_ << " is_src_: " << pmsg->is_src_ << " from_: " << pmsg->from_;
+  //       items[pmsg->idx_].src_ = pmsg->v_i_;
+  //     } else {
+  //       LOG(INFO) << "------------assist_thread, __recv dst: " << "v_i_: " << pmsg->v_i_ << " idx_: " << pmsg->idx_ << " is_src_: " << pmsg->is_src_ << " from_: " << pmsg->from_;
+  //       items[pmsg->idx_].dst_ = pmsg->v_i_;
+  //     }
+  //   };
 
-    bsp_opts_t bsp_opts;
-    // bsp_opts.threads_ = 1;
-    // bsp_opts.global_size_    = 64 * MBYTES;
-    // bsp_opts.local_capacity_ = 32 * PAGESIZE;
+  //   bsp_opts_t bsp_opts;
+  //   // bsp_opts.threads_ = 1;
+  //   // bsp_opts.global_size_    = 64 * MBYTES;
+  //   // bsp_opts.local_capacity_ = 32 * PAGESIZE;
 
-    int rc = fine_grain_bsp<vid_encoded_msg_t>(__send, __recv, bsp_opts);
-    CHECK(0 == rc);
-  });
+  //   int rc = fine_grain_bsp<vid_encoded_msg_t>(__send, __recv, bsp_opts);
+  //   CHECK(0 == rc);
+  // });
 
   LOG(INFO) << "---------------------- spread_task start";
   {
@@ -298,7 +303,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
     };
 
     auto __recv = [&](int p_i, bsp_recv_pmsg_t<vid_to_encode_msg_t>& pmsg) {
-        LOG(INFO) << "------------------__recv: " << "v_i_: " << pmsg->v_i_ << " idx_: " << pmsg->idx_ << " is_src_: " << pmsg->is_src_ << " from_: " << pmsg->from_; 
+        LOG(INFO) << "------------------__recv: " << "v_i_: " << pmsg->v_i_ << "encoded: " << lock_table->at(pmsg->v_i_) << " idx_: " << pmsg->idx_ << " is_src_: " << pmsg->is_src_ << " from_: " << pmsg->from_; 
         encoded_msg_queue.enqueue(vid_encoded_msg_t { lock_table->at(pmsg->v_i_), pmsg->idx_, pmsg->is_src_, pmsg->from_ });
     };
 
@@ -315,8 +320,45 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
 
   LOG(INFO) << "----------------assist_thread before join";
 
-  assist_thread.join();
+  //assist_thread.join();
+  {
+    // 发送编码结果, 接收编码结果
+    // auto& cluster_info = cluster_info_t::get_instance();
+
+    auto __send = [&](bsp_send_callback_t<vid_encoded_msg_t> send) { /// 发送编码结果
+      vid_encoded_msg_t encoded_msg;
+      LOG(INFO) << "-------------assist_thread, process_continue start: " << process_continue.load();
+      while (encoded_msg_queue.try_dequeue(encoded_msg)) {
+          LOG(INFO) << "------------assist_thread, try dequeued a encded_msg" << "v_i_: " << encoded_msg.v_i_ << " idx_: " << encoded_msg.idx_ << " is_src_: " << encoded_msg.is_src_ << " from_: " << encoded_msg.from_;
+          send(encoded_msg.from_, encoded_msg);
+      }
+      LOG(INFO) << "-------------assist_thread, process_continue end: " << process_continue.load();
+    };
+
+    auto __recv = [&](int, bsp_recv_pmsg_t<vid_encoded_msg_t>& pmsg) { /// 接收编码结果
+      if (pmsg->is_src_) {
+        LOG(INFO) << "-----------assist_thread, __recv src: " << "v_i_: " << pmsg->v_i_ << " idx_: " << pmsg->idx_ << " is_src_: " << pmsg->is_src_ << " from_: " << pmsg->from_;
+        items[pmsg->idx_].src_ = pmsg->v_i_;
+      } else {
+        LOG(INFO) << "------------assist_thread, __recv dst: " << "v_i_: " << pmsg->v_i_ << " idx_: " << pmsg->idx_ << " is_src_: " << pmsg->is_src_ << " from_: " << pmsg->from_;
+        items[pmsg->idx_].dst_ = pmsg->v_i_;
+      }
+    };
+
+    bsp_opts_t bsp_opts;
+    // bsp_opts.threads_ = 1;
+    // bsp_opts.global_size_    = 64 * MBYTES;
+    // bsp_opts.local_capacity_ = 32 * PAGESIZE;
+
+    int rc = fine_grain_bsp<vid_encoded_msg_t>(__send, __recv, bsp_opts);
+    CHECK(0 == rc);
+  }
+
   LOG(INFO) << "-----------------assist_thread joined";
+  LOG(INFO) << "----after encoded, items:";
+  for (auto &item : items) {
+    LOG(INFO) << item.src_ << "," << item.dst_;
+  }
   callback(&items[0], items.size());
   lock_table.reset(nullptr);
   if (0 == cluster_info.partition_id_) {
