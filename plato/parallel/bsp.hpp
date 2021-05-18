@@ -622,7 +622,7 @@ int fine_grain_bsp (
     do {  // wait all tasks finished
       busy = false;
       for (size_t i = 0; i < processing.size(); ++i) {
-        if (processing[i] && (0 != chunk_left[i].load())) {
+        if (processing[i] && (0 != chunk_left[i].load())) { /// 等待所有produce的消息都被consume掉
           busy = true;
         }
       }

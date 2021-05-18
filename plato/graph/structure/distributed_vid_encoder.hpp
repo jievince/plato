@@ -83,8 +83,8 @@ public:
    */
   inline VID_T decode(vid_t v_i) override {
     auto &cluster_info = plato::cluster_info_t::get_instance();
-    auto local_vid_start = local_sizes_[cluster_info.partition_id_];
-    auto local_vid_end = local_sizes_[cluster_info.partition_id_ + 1];
+    auto local_vid_start = local_vid_offset_[cluster_info.partition_id_];
+    auto local_vid_end = local_vid_offset_[cluster_info.partition_id_ + 1];
     CHECK(v_i >= local_vid_start && v_i < local_vid_end)
         << "v: " << v_i << ", vid cannot be decoded by"
         << " partition_id: " << cluster_info.partition_id_
@@ -103,7 +103,7 @@ public:
 
 private:
   std::vector<VID_T> local_ids_;
-  std::vector<vid_t> local_sizes_;
+  std::vector<vid_t> local_vid_offset_;
   vid_encoder_opts_t opts_;
 };
 
@@ -181,10 +181,10 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
     LOG(INFO) << "total vertex size: " << global_vertex_size;
   }
 
-  local_sizes_.resize(cluster_info.partitions_, 0);
-  for (int i = 0; i < cluster_info.partitions_; ++i) {
-    if (i > 0) local_sizes_[i] = local_sizes[i - 1] + local_sizes_[i - 1];
-    //LOG(INFO) << "partition: " << i << " count: " << local_sizes[i] << " pos: " << displs[i];
+  local_vid_offset_.resize(cluster_info.partitions_+1, 0);
+  for (int i = 0; i <= cluster_info.partitions_; ++i) {
+    if (i > 0) local_vid_offset_[i] = local_sizes[i - 1] + local_vid_offset_[i - 1];
+    LOG(INFO) << "local_vid_offset_[" << i << "] " << local_vid_offset_[i];
   }
 
   watch.mark("t1");
@@ -206,37 +206,48 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
   moodycamel::ConcurrentQueue<vid_encoded_msg_t>  encoded_msg_queue;
   std::atomic<bool> process_continue(true);
 
-  std::vector<edge_unit_t<EDATA, vid_t>> items(HUGESIZE); /// shoule be resized to size of local edges
+  std::vector<edge_unit_t<EDATA, vid_t>> items(cache.size()); /// shoule be resized to size of local edges
   std::atomic<size_t> k(0);
 
+  LOG(INFO) << "------------------- assist_thread_start";
   std::thread assist_thread ([&] {
     // 发送编码结果, 接收编码结果
     // auto& cluster_info = cluster_info_t::get_instance();
 
     auto __send = [&](bsp_send_callback_t<vid_encoded_msg_t> send) { /// 发送编码结果
       vid_encoded_msg_t encoded_msg;
+      LOG(INFO) << "-------------assist_thread, process_continue start: " << process_continue.load();
       while (process_continue.load()) {
         if (encoded_msg_queue.try_dequeue(encoded_msg)) {
+          LOG(INFO) << "------------assist_thread, try dequeued a encded_msg" << "v_i_: " << encoded_msg.v_i_ << " idx_: " << encoded_msg.idx_ << " is_src_: " << encoded_msg.is_src_ << " from_: " << encoded_msg.from_;
           send(encoded_msg.from_, encoded_msg);
+        } else {
+          //LOG(INFO) << "------------assist_thread, try dequeued failed...";
         }
       }
+      LOG(INFO) << "-------------assist_thread, process_continue end: " << process_continue.load();
     };
 
     auto __recv = [&](int, bsp_recv_pmsg_t<vid_encoded_msg_t>& pmsg) { /// 接收编码结果
       if (pmsg->is_src_) {
+        LOG(INFO) << "-----------assist_thread, __recv src: " << "v_i_: " << pmsg->v_i_ << " idx_: " << pmsg->idx_ << " is_src_: " << pmsg->is_src_ << " from_: " << pmsg->from_;
         items[pmsg->idx_].src_ = pmsg->v_i_;
       } else {
+        LOG(INFO) << "------------assist_thread, __recv dst: " << "v_i_: " << pmsg->v_i_ << " idx_: " << pmsg->idx_ << " is_src_: " << pmsg->is_src_ << " from_: " << pmsg->from_;
         items[pmsg->idx_].dst_ = pmsg->v_i_;
       }
     };
 
     bsp_opts_t bsp_opts;
+    // bsp_opts.threads_ = 1;
     // bsp_opts.global_size_    = 64 * MBYTES;
     // bsp_opts.local_capacity_ = 32 * PAGESIZE;
 
-    fine_grain_bsp<vid_encoded_msg_t>(__send, __recv, bsp_opts);
+    int rc = fine_grain_bsp<vid_encoded_msg_t>(__send, __recv, bsp_opts);
+    CHECK(0 == rc);
   });
 
+  LOG(INFO) << "---------------------- spread_task start";
   {
     using edge_unit_spec_t = edge_unit_t<EDATA, VID_T>;
     using push_context_t = plato::template mepa_sd_context_t<vid_to_encode_msg_t>;
@@ -255,7 +266,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
         if (opts_.src_need_encode_) {
           auto send_to = murmur_hash2(&(edge->src_), sizeof(edge->src_)) %
                          cluster_info.partitions_;
-          auto to_encode_msg = vid_to_encode_msg_t{edge->src_, k, true, cluster_info.partition_id_};
+          auto to_encode_msg = vid_to_encode_msg_t{edge->src_, idx, true, cluster_info.partition_id_};
           context.send(send_to, to_encode_msg);
         } else {
           items[idx].src_ = edge->src_;
@@ -263,7 +274,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
         if (opts_.dst_need_encode_) {
           auto send_to = murmur_hash2(&(edge->dst_), sizeof(edge->dst_)) %
                          cluster_info.partitions_;
-          auto to_encode_msg = vid_to_encode_msg_t{edge->dst_, k, false, cluster_info.partition_id_};
+          auto to_encode_msg = vid_to_encode_msg_t{edge->dst_, idx, false, cluster_info.partition_id_};
           context.send(send_to, to_encode_msg);
         } else {
           items[idx].dst_ = edge->dst_;
@@ -273,6 +284,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
     auto __send = [&](bsp_send_callback_t<vid_to_encode_msg_t> send) {
       auto send_callback = [&](int node, const vid_to_encode_msg_t& message) {
         send(node, message);
+        LOG(INFO) << "---------------------send a msg";
       };
 
       mepa_sd_context_t<vid_to_encode_msg_t> context { send_callback };
@@ -280,21 +292,31 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
       size_t chunk_size = bsp_opts.local_capacity_;
       auto rebind_traversal = bind_task_detail::bind_send_task(std::move(spread_task),
           std::move(context));
-      while (cache.next_chunk(rebind_traversal, &chunk_size)) { }
+      LOG(INFO) << "--------------------__send: before while";
+      while (cache.next_chunk(rebind_traversal, &chunk_size)) { LOG(INFO) << "---------------__send: in while"; }
+      LOG(INFO) << "--------------------__send: after while";
     };
 
     auto __recv = [&](int p_i, bsp_recv_pmsg_t<vid_to_encode_msg_t>& pmsg) {
+        LOG(INFO) << "------------------__recv: " << "v_i_: " << pmsg->v_i_ << " idx_: " << pmsg->idx_ << " is_src_: " << pmsg->is_src_ << " from_: " << pmsg->from_; 
         encoded_msg_queue.enqueue(vid_encoded_msg_t { lock_table->at(pmsg->v_i_), pmsg->idx_, pmsg->is_src_, pmsg->from_ });
     };
 
     auto __after_recv_task = [&](void) {
       process_continue.store(false);
+      LOG(INFO) << "__after_recv_task executed, process_continue: " << process_continue.load();
     };
 
-    fine_grain_bsp<vid_to_encode_msg_t>(__send, __recv, bsp_opts, bsp_detail::dummy_func, __after_recv_task);
+    LOG(INFO) << "--------------- spread_task -> fine_grain_bsp start";
+    int rc = fine_grain_bsp<vid_to_encode_msg_t>(__send, __recv, bsp_opts, bsp_detail::dummy_func, __after_recv_task);
+    CHECK(0 == rc);
+    LOG(INFO) << "--------------- spread_task -> fine_grain_bsp end";
   }
 
+  LOG(INFO) << "----------------assist_thread before join";
+
   assist_thread.join();
+  LOG(INFO) << "-----------------assist_thread joined";
   callback(&items[0], items.size());
   lock_table.reset(nullptr);
   if (0 == cluster_info.partition_id_) {

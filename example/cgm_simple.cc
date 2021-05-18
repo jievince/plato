@@ -19,6 +19,8 @@
   See the AUTHORS file for names of contributors.
 */
 
+#define __BSP_DEBUG__
+
 #include <cstdint>
 #include <cstdlib>
 
@@ -54,7 +56,7 @@ void run_cgm(bool need_encode) {
   plato::stop_watch_t watch;
   auto& cluster_info = plato::cluster_info_t::get_instance();
 
-  plato::vid_encoder_t<plato::empty_t, VID_T> data_encoder;
+  plato::distributed_vid_encoder_t<plato::empty_t, VID_T> data_encoder;
 
   auto encoder_ptr = &data_encoder;
   if (!need_encode) encoder_ptr = nullptr;
