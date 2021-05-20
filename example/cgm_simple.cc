@@ -91,9 +91,10 @@ void run_cgm(bool need_encode) {
     cc.template write_all_edges<VID_T>(FLAGS_output, encoder_ptr);
   }
 
-  if (0 == cluster_info.partition_id_) {
-    LOG(INFO) << "connected component done const: " << watch.show("t0") / 1000.0 << "s";
-  }
+  MPI_Barrier(MPI_COMM_WORLD);
+  // if (0 == cluster_info.partition_id_) {
+  LOG(INFO) << cluster_info.partition_id_ << "connected component done const: " << watch.show("t0") / 1000.0 << "s";
+  // }
 }
 
 int main(int argc, char** argv) {
@@ -108,7 +109,7 @@ int main(int argc, char** argv) {
 
   if (FLAGS_vtype == "uint32")  {
     run_cgm<uint32_t>(need_encode);
-  } else { 
+  } else {
 
     LOG(INFO) << "If vertex type is not uint32_t, It must use encoder";
     need_encode = true;

@@ -67,7 +67,78 @@ public:
    * @brief
    * @param opts
    */
-  distributed_vid_encoder_t(const vid_encoder_opts_t& opts = vid_encoder_opts_t()): opts_(opts) {}
+  distributed_vid_encoder_t(const vid_encoder_opts_t& opts = vid_encoder_opts_t()): opts_(opts) {
+    auto &cluster_info = plato::cluster_info_t::get_instance();
+    
+    if (!server_started_) {
+      LOG(INFO) << "******start server";
+      server_started_ = true;
+      serve_thread_ = std::thread([&]() {
+        LOG(INFO) << "******server starting";
+        std::vector<vid_t> recv_buff(cluster_info.partitions_);
+        std::vector<MPI_Request> recv_requests_vec(cluster_info.partitions_, MPI_REQUEST_NULL);
+        for (size_t i = 0; i < recv_requests_vec.size(); ++i) {
+          MPI_Irecv(&recv_buff[i], sizeof(vid_t), MPI_CHAR, i, Request, MPI_COMM_WORLD, &recv_requests_vec[i]);
+        }
+
+        auto probe_once =
+          [&](bool continued) {
+            //LOG(INFO) << cluster_info.partition_id_ << "***continue_serve_....";
+            int  flag        = 0;
+            int  index       = 0;
+            int  recv_bytes  = 0;
+            bool has_message = false;
+            MPI_Status status;
+
+            MPI_Testany(recv_requests_vec.size(), recv_requests_vec.data(), &index, &flag, &status);
+            //LOG(INFO) << "MPI_Testanyed, flag: " << flag << ", index: " << index;
+            while (flag && (MPI_UNDEFINED != index)) {
+                auto local_vid_start = local_vid_offset_[cluster_info.partition_id_];
+                auto local_vid_end = local_vid_offset_[cluster_info.partition_id_ + 1];
+                LOG(INFO) << "***catched a new req msg";
+                MPI_Get_count(&status, MPI_CHAR, &recv_bytes);
+
+                CHECK(recv_bytes == sizeof(vid_t)) << "recv message's size != sizeof(vid_t): " << recv_bytes;
+                auto v_i = recv_buff[index];
+                CHECK(v_i >= local_vid_start && v_i < local_vid_end)
+                    << "v: " << v_i << ", vid cannot be decoded by"
+                    << " partition_id: " << cluster_info.partition_id_
+                    << ", valid vid range: [" << local_vid_start << "," << local_vid_end
+                    << ")";
+                VID_T decoded_v_i = local_ids_[v_i-local_vid_start];
+                LOG(INFO) << "888888888888 server start sending response...";
+                MPI_Send(&decoded_v_i, sizeof(VID_T), MPI_CHAR, index, Response, MPI_COMM_WORLD);
+                LOG(INFO) << "88888888888 server sended responsee...";
+                MPI_Irecv(&recv_buff[index], sizeof(vid_t), MPI_CHAR, index, Request, MPI_COMM_WORLD, &recv_requests_vec[index]);
+                LOG(INFO) << "88888888 server Irecved...";
+                MPI_Testany(recv_requests_vec.size(), recv_requests_vec.data(), &index, &flag, &status);
+            }
+
+            return has_message;
+          };
+
+          uint32_t idle_times = 0;
+          while (continue_serve_) {
+            bool busy = probe_once(false);
+
+            idle_times += (uint32_t)(false == busy);
+            if (idle_times > 10) {
+              poll(nullptr, 0, 1);
+              idle_times = 0;
+            } else if (false == busy) {
+              pthread_yield();
+            }
+          }
+          LOG(INFO) << cluster_info.partition_id_ << " serve thread exited..........................................................";
+      });
+      LOG(INFO) << "*** server started";
+    }
+  }
+
+  ~distributed_vid_encoder_t() {
+    continue_serve_ = false;
+    serve_thread_.join();
+  }
 
   /**
    * @brief encode
@@ -81,16 +152,28 @@ public:
    * @param v_i
    * @return
    */
-  inline VID_T decode(vid_t v_i) override {
+  VID_T decode(vid_t v_i) override {
+    CHECK(v_i < local_vid_offset_.back())
+        << "v: " << v_i << " exceed max value " << local_vid_offset_.back();
+
     auto &cluster_info = plato::cluster_info_t::get_instance();
     auto local_vid_start = local_vid_offset_[cluster_info.partition_id_];
     auto local_vid_end = local_vid_offset_[cluster_info.partition_id_ + 1];
-    CHECK(v_i >= local_vid_start && v_i < local_vid_end)
-        << "v: " << v_i << ", vid cannot be decoded by"
-        << " partition_id: " << cluster_info.partition_id_
-        << ", valid vid range: [" << local_vid_start << "," << local_vid_end
-        << ")";
-    return local_ids_[v_i-local_vid_start];
+
+    // if (v_i >= local_vid_start && v_i < local_vid_end) {
+    //   LOG(INFO) << "****decode() locally: v_i: " << v_i << ", decoded_v_i: " << local_ids_[v_i-local_vid_start] << ", valid local vid range: [" << local_vid_start << "," << local_vid_end;
+    //   return local_ids_[v_i-local_vid_start];
+    // } else {
+      VID_T decoded_v_i;
+      MPI_Status status;
+      auto send_to = get_part_id(v_i);
+      LOG(INFO) << "*******decode() try decode on other machine, v_i: " << v_i << ", send_to: " << send_to << ". Current partId: " << cluster_info.partition_id_ << ", valid local vid range: [" << local_vid_start << "," << local_vid_end;
+      MPI_Send(&v_i, sizeof(vid_t), MPI_CHAR, send_to, Request, MPI_COMM_WORLD);
+      LOG(INFO) << "8888888 sened....";
+      MPI_Recv(&decoded_v_i, 512, MPI_CHAR, send_to, Response, MPI_COMM_WORLD, &status);
+      LOG(INFO) << "**********decode(), v_i: " << v_i << ", decoded_v_i: " << decoded_v_i;
+      return decoded_v_i;
+    // }
   }
 
   /**
@@ -102,9 +185,25 @@ public:
   }
 
 private:
+  int get_part_id(vid_t v_i) {
+    CHECK(v_i < local_vid_offset_.back())
+        << "v: " << v_i << " exceed max value " << local_vid_offset_.back();
+    for (int p_i = 0; p_i < local_vid_offset_.size(); ++p_i) {
+      if (v_i >= local_vid_offset_[p_i] && v_i < local_vid_offset_[p_i+1]) {
+        return p_i;
+      }
+    }
+    return -1;
+  }
+
+private:
   std::vector<VID_T> local_ids_;
   std::vector<vid_t> local_vid_offset_;
   vid_encoder_opts_t opts_;
+
+  std::thread serve_thread_;
+  bool server_started_{false};
+  bool continue_serve_{true};
 };
 
 template <typename EDATA, typename VID_T, template<typename, typename> class CACHE>

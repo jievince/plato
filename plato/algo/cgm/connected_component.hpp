@@ -389,6 +389,8 @@ template <typename INCOMING, typename OUTGOING>
 template <typename VID_T>
 void connected_component_t<INCOMING, OUTGOING>::write_component(
   const std::string& prefix, VID_T target_label, vencoder_t<edata_t, VID_T> vid_encoder) {
+  
+  LOG(INFO) << "@@@@@@@@@@ write_component";
 
   auto& cluster_info = plato::cluster_info_t::get_instance();
   vid_t actual_label = graph_info_.vertices_;

@@ -53,7 +53,9 @@ enum MessageTag {
   Stop        = 0,
   PassMessage = 1,
   Shuffle     = 2,
-  ShuffleFin  = 3
+  ShuffleFin  = 3,
+  Request     = 4,
+  Response    = 5
 };
 
 template <typename T>

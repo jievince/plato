@@ -7,8 +7,8 @@ ROOT_DIR=$(realpath $CUR_DIR/..)
 cd $ROOT_DIR
 
 MAIN="$ROOT_DIR/bazel-bin/example/pagerank" # process name
-WNUM=1
-WCORES=3
+WNUM=3
+WCORES=4
 
 INPUT=${INPUT:="$ROOT_DIR/data/graph/v100_e2150_ua_c3.csv"}
 # INPUT=${INPUT:="nebula:$ROOT_DIR/scripts/nebula.conf"}
