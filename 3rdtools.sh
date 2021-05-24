@@ -199,6 +199,10 @@ function install {
   popd
   popd
 
+  pushd ${rootdir}/3rd
+  clean_exec cp ../build_tools/BUILD_nebula-cpp ./nebula-cpp/BUILD
+  popd
+
   popd
   echo "build 3rd done, you can remove .downloads now."
 }

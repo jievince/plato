@@ -1,0 +1,41 @@
+cc_library (
+    name = "nebula_graph_client-dynamic",
+    hdrs = glob([
+        "include/common/datatypes/*.h",
+        "include/common/graph/*.h",
+        "include/common/thrift/*.h",
+        "include/nebula/client/*.h",
+    ]),
+    srcs = [
+        "lib64/libnebula_graph_client.so"
+    ],
+    deps = [
+        #"//3rd/jni:jni",
+    ],
+    strip_include_prefix = "include",
+    linkopts = [
+        #"-lpthread", "-ljvm",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library (
+    name = "nebula_storage_client-dynamic",
+    hdrs = glob([
+        "include/common/datatypes/*.h",
+        "include/common/thrift/*.h",
+        "include/nebula/sclient/*.h",
+    ]),
+    srcs = [
+        "lib64/libnebula_storage_client.so"
+    ],
+    deps = [
+        #"//3rd/jni:jni",
+    ],
+    strip_include_prefix = "include",
+    linkopts = [
+        #"-lpthread", "-ljvm",
+    ],
+    visibility = ["//visibility:public"],
+)
+
