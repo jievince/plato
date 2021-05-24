@@ -136,6 +136,7 @@ public:
   }
 
   ~distributed_vid_encoder_t() {
+    MPI_Barrier(MPI_COMM_WORLD);
     continue_serve_ = false;
     serve_thread_.join();
   }
@@ -160,10 +161,10 @@ public:
     auto local_vid_start = local_vid_offset_[cluster_info.partition_id_];
     auto local_vid_end = local_vid_offset_[cluster_info.partition_id_ + 1];
 
-    // if (v_i >= local_vid_start && v_i < local_vid_end) {
-    //   LOG(INFO) << "****decode() locally: v_i: " << v_i << ", decoded_v_i: " << local_ids_[v_i-local_vid_start] << ", valid local vid range: [" << local_vid_start << "," << local_vid_end;
-    //   return local_ids_[v_i-local_vid_start];
-    // } else {
+    if (v_i >= local_vid_start && v_i < local_vid_end) {
+      LOG(INFO) << "****decode() locally: v_i: " << v_i << ", decoded_v_i: " << local_ids_[v_i-local_vid_start] << ", valid local vid range: [" << local_vid_start << "," << local_vid_end;
+      return local_ids_[v_i-local_vid_start];
+    } else {
       VID_T decoded_v_i;
       MPI_Status status;
       auto send_to = get_part_id(v_i);
@@ -173,7 +174,7 @@ public:
       MPI_Recv(&decoded_v_i, 512, MPI_CHAR, send_to, Response, MPI_COMM_WORLD, &status);
       LOG(INFO) << "**********decode(), v_i: " << v_i << ", decoded_v_i: " << decoded_v_i;
       return decoded_v_i;
-    // }
+    }
   }
 
   /**

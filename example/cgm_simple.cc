@@ -91,7 +91,6 @@ void run_cgm(bool need_encode) {
     cc.template write_all_edges<VID_T>(FLAGS_output, encoder_ptr);
   }
 
-  MPI_Barrier(MPI_COMM_WORLD);
   // if (0 == cluster_info.partition_id_) {
   LOG(INFO) << cluster_info.partition_id_ << "connected component done const: " << watch.show("t0") / 1000.0 << "s";
   // }

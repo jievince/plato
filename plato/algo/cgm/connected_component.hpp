@@ -399,7 +399,7 @@ void connected_component_t<INCOMING, OUTGOING>::write_component(
     vid_t tmp = graph_info_.vertices_;
     #pragma omp parallel num_threads(cluster_info.threads_)
     for (vid_t i = 0; i < graph_info_.vertices_; ++i) {
-      if (vid_encoder->data()[i] == target_label) {
+      if (vid_encoder->decode(i) == target_label) {
         tmp = i; 
       }
     }

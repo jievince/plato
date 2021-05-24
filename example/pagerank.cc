@@ -74,11 +74,16 @@ int main(int argc, char** argv) {
 
   watch.mark("t0");
 
+
+  plato::distributed_vid_encoder_t<plato::empty_t> data_encoder;
+
+  auto encoder_ptr = &data_encoder;
+
   // init graph
   plato::graph_info_t graph_info(FLAGS_is_directed);
   auto pdcsc = plato::create_dcsc_seqs_from_path<plato::empty_t>( // seqs means seq part_by_src [master src]->[mirror dst] dense
     &graph_info, FLAGS_input, plato::edge_format_t::CSV,
-    plato::dummy_decoder<plato::empty_t>, FLAGS_alpha, FLAGS_part_by_in
+    plato::dummy_decoder<plato::empty_t>, FLAGS_alpha, FLAGS_part_by_in, encoder_ptr
   );
 
   using graph_spec_t         = std::remove_reference<decltype(*pdcsc)>::type;
@@ -195,7 +200,11 @@ int main(int argc, char** argv) {
     curt_rank->foreach<int> (
       [&](plato::vid_t v_i, double* pval) {
         auto& fs_output = os.local();
-        fs_output << v_i << "," << *pval << "\n";
+        if (encoder_ptr != nullptr) {
+          fs_output << encoder_ptr->decode(v_i) << "," << *pval << "\n";
+        } else {
+          fs_output << v_i << "," << *pval << "\n";
+        }
         return 0;
       }
     );
