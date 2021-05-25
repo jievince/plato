@@ -43,6 +43,7 @@
 DEFINE_string(input,       "",      "input file, in csv format, without edge data");
 DEFINE_string(output,      "",      "output directory");
 DEFINE_bool(is_directed,   false,   "is graph directed or not");
+DEFINE_bool(need_encode,   false,                    "");
 DEFINE_bool(part_by_in,    false,   "partition by in-degree");
 DEFINE_int32(alpha,        -1,      "alpha value used in sequence balance partition");
 DEFINE_uint64(iterations,  100,     "number of iterations");
@@ -78,6 +79,7 @@ int main(int argc, char** argv) {
   plato::distributed_vid_encoder_t<plato::empty_t> data_encoder;
 
   auto encoder_ptr = &data_encoder;
+  if (!FLAGS_need_encode) encoder_ptr = nullptr;
 
   // init graph
   plato::graph_info_t graph_info(FLAGS_is_directed);
