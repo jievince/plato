@@ -556,9 +556,7 @@ int fine_grain_bsp (
         while (flag && (MPI_UNDEFINED != index)) {
           if (ShuffleFin == status.MPI_TAG) {
             ++finished_count;
-            LOG(INFO) << "recv a ShuffleFin!!!";
           } else {  // call recv_task
-            LOG(INFO) << "recv a Shuffle chunk msgs";
             char* buff = buffs_vec[index].get();
 
             MPI_Get_count(&status, MPI_CHAR, &recv_bytes);
@@ -680,7 +678,6 @@ int fine_grain_bsp (
               recv_task(chunk.from_, msg); /// consume msg
             }
             --chunk_left[chunk.index_];
-            LOG(INFO) << "consumed a chunk msgs";
 
             has_message = true;
             if (++processed >= batch_size) { break; }

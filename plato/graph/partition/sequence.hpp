@@ -173,7 +173,7 @@ public:
    *
    * \param degrees   each vertex's degrees
    * \param vertices  vertex number of the graph
-   * \param vertices  edge number of the graph
+   * \param edges     edge number of the graph
    * \param alpha     vertex's weight of computation, default: -1, means
    *                  alpha = 8 * (partitions - 1)
    **/
@@ -234,7 +234,7 @@ public:
    *
    * \param degrees   each vertex's degrees
    * \param vertices  vertex number of the graph
-   * \param vertices  edge number of the graph
+   * \param edges     edge number of the graph
    * \param alpha     vertex's weight of computation, default: -1, means
    *                  alpha = 8 * (partitions - 1)
    **/
@@ -280,7 +280,7 @@ void sequence_v_view::reset_traversal(const traverse_opts_t& opts) {
 
 template <typename TRAVERSAL>
 bool sequence_v_view::next_chunk(TRAVERSAL&& traversal, size_t* chunk_size) {
-  vid_t range_start = traverse_i_.fetch_add(*chunk_size, std::memory_order_relaxed);;
+  vid_t range_start = traverse_i_.fetch_add(*chunk_size, std::memory_order_relaxed);
 
   if (range_start >= end_) { return false; }
   if (range_start + *chunk_size > end_) {

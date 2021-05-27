@@ -19,8 +19,6 @@
   See the AUTHORS file for names of contributors.
 */
 
-#define __BSP_DEBUG__
-
 #include <cstdint>
 #include <cstdlib>
 

@@ -374,7 +374,7 @@ std::string connected_component_t<INCOMING, OUTGOING>::get_summary(
   for (const auto &c : comps) {
     ss << "Component #"  << ++count;
     if (vid_encoder == nullptr) ss << ", label=" << c->label;
-    else ss << ", label=" << vid_encoder->data()[c->label];
+    else ss << ", label=" << vid_encoder->decode(c->label);
 
     ss << boost::format(", vertices=%u, edges=%lu\n") %
         c->vertices % c->edges;
@@ -433,8 +433,10 @@ void connected_component_t<INCOMING, OUTGOING>::write_component(
   auto output_result = [&](vid_t src, vid_t dst) {
     auto& fs_output = os.local();
     if (vid_encoder != nullptr) {
+      // LOG(INFO) << src << "," << dst << " --> " << vid_encoder->decode(src) << "," << vid_encoder->decode(dst);
       fs_output << vid_encoder->decode(src) << "," << vid_encoder->decode(dst) << "\n";
     } else {
+      // LOG(INFO) << src << "," << dst;
       fs_output << src << "," << dst << "\n";
     }
   };

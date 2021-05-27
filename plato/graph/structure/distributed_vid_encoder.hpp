@@ -259,7 +259,6 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
     iterator_t it = lock_table->begin();
     for (size_t i = 0; lock_table->end() != it; ++i, ++it) {
       local_ids_[i] = it->first;
-      LOG(INFO) << "local_ids_[" << i << "]=" << local_ids_[i];
     }
 
     lock_table.reset(nullptr);
@@ -292,14 +291,12 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
   cuckoomap_t id_table(local_vertex_size * 1.2);
   #pragma omp parallel for num_threads(cluster_info.threads_)
   for (vid_t i = 0; i < local_vertex_size; ++i) {
-    id_table.upsert(local_ids_[i], [](vid_t&){ }, i + local_vid_offset_[cluster_info.partition_id_]);
+    auto local_vid_start = local_vid_offset_[cluster_info.partition_id_];
+    id_table.upsert(local_ids_[i], [](vid_t&){ }, i + local_vid_start);
+    LOG(INFO) << "[" << cluster_info.partition_id_ << "]" << local_ids_[i] << " --> " << i + local_vid_start;
   }
 
   lock_table.reset(new locked_table_t(std::move(id_table.lock_table())));
-  iterator_t it = lock_table->begin();
-  for (size_t i = 0; lock_table->end() != it; ++i, ++it) {
-    LOG(INFO) << "lock_table(id_table), NO." << i << "=" << it->first;
-  }
   if (0 == cluster_info.partition_id_) {
     LOG(INFO) << "get all id table cost: " << watch.show("t1") / 1000.0;
   }
@@ -389,7 +386,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
     auto __send = [&](bsp_send_callback_t<vid_to_encode_msg_t> send) {
       auto send_callback = [&](int node, const vid_to_encode_msg_t& message) {
         send(node, message);
-        LOG(INFO) << "---------------------send a msg";
+        // LOG(INFO) << "---------------------send a msg";
       };
 
       mepa_sd_context_t<vid_to_encode_msg_t> context { send_callback };
