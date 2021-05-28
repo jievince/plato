@@ -225,6 +225,7 @@ cc_library (
         "//plato/graph:message_passing",
         "//plato/util/libcuckoo:libcuckoo",
         "//plato/util:perf",
+        "//plato/util/caches:lru_cache",
 
         ":vid_encoder_base",
     ],

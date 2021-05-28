@@ -29,12 +29,14 @@
 #include "plato/graph/message_passing.hpp"
 #include "libcuckoo/cuckoohash_map.hh"
 #include "plato/util/perf.hpp"
+#include "caches/cache.hpp"
+#include "caches/lru_cache_policy.hpp"
 
 
 namespace plato {
 
 template <typename VID_T>
-struct vid_encoder_message_t {
+struct vid_to_encode_msg_t {
   VID_T v_i_;
   size_t idx_;
   bool is_src_;
@@ -46,28 +48,32 @@ struct vid_encoder_message_t {
   }
 };
 
-template <>
-struct vid_encoder_message_t<vid_t> {
-  vid_t v_i_;
+template <typename VID_T>
+struct vid_encoded_msg_t {
+  VID_T v_i_;
+  vid_t encoded_v_i_;
   size_t idx_;
   bool is_src_;
   int from_;
 
   template<typename Ar>
   void serialize(Ar &ar) {
-    ar & v_i_ & idx_ & is_src_ & from_;
+    ar & v_i_ & encoded_v_i_ & idx_ & is_src_ & from_;
   }
 };
 
 template <typename EDATA, typename VID_T = vid_t, template<typename, typename> class CACHE = edge_block_cache_t>
 class distributed_vid_encoder_t : public vid_encoder_base_t<EDATA, VID_T, CACHE>{
 public:
+  template <typename Key, typename Value>
+  using lru_cache_t = typename caches::fixed_sized_cache<Key, Value, caches::LRUCachePolicy<Key>>;
+
   using encoder_callback_t = std::function<bool(edge_unit_t<EDATA, vid_t>*, size_t)>;
   /**
    * @brief
    * @param opts
    */
-  distributed_vid_encoder_t(const vid_encoder_opts_t& opts = vid_encoder_opts_t()): opts_(opts) {
+  distributed_vid_encoder_t(const vid_encoder_opts_t& opts = vid_encoder_opts_t()): opts_(opts), encoded_cache_(HUGESIZE), decoded_cache_(HUGESIZE) {
     auto &cluster_info = plato::cluster_info_t::get_instance();
     
     if (!server_started_) {
@@ -106,11 +112,8 @@ public:
                     << ", valid vid range: [" << local_vid_start << "," << local_vid_end
                     << ")";
                 VID_T decoded_v_i = local_ids_[v_i-local_vid_start];
-                LOG(INFO) << "888888888888 server start sending response...";
                 MPI_Send(&decoded_v_i, sizeof(VID_T), MPI_CHAR, index, Response, MPI_COMM_WORLD);
-                LOG(INFO) << "88888888888 server sended responsee...";
                 MPI_Irecv(&recv_buff[index], sizeof(vid_t), MPI_CHAR, index, Request, MPI_COMM_WORLD, &recv_requests_vec[index]);
-                LOG(INFO) << "88888888 server Irecved...";
                 MPI_Testany(recv_requests_vec.size(), recv_requests_vec.data(), &index, &flag, &status);
             }
 
@@ -162,17 +165,20 @@ public:
     auto local_vid_end = local_vid_offset_[cluster_info.partition_id_ + 1];
 
     if (v_i >= local_vid_start && v_i < local_vid_end) {
-      LOG(INFO) << "****decode() locally: v_i: " << v_i << ", decoded_v_i: " << local_ids_[v_i-local_vid_start] << ", valid local vid range: [" << local_vid_start << "," << local_vid_end;
+      LOG(INFO) << "[" << cluster_info.partition_id_ << "]" << "decode() locally " << "v_i " << v_i << " --> " << local_ids_[v_i-local_vid_start];
       return local_ids_[v_i-local_vid_start];
+    } else if (decoded_cache_.Cached(v_i)) {
+      LOG(INFO) << "hit decoded cache";
+      return decoded_cache_.Get(v_i);
     } else {
+      LOG(INFO) << "decode cache not cached!!!!, decoded cache size: " << decoded_cache_.Size();
       VID_T decoded_v_i;
       MPI_Status status;
       auto send_to = get_part_id(v_i);
-      LOG(INFO) << "*******decode() try decode on other machine, v_i: " << v_i << ", send_to: " << send_to << ". Current partId: " << cluster_info.partition_id_ << ", valid local vid range: [" << local_vid_start << "," << local_vid_end;
       MPI_Send(&v_i, sizeof(vid_t), MPI_CHAR, send_to, Request, MPI_COMM_WORLD);
-      LOG(INFO) << "8888888 sened....";
       MPI_Recv(&decoded_v_i, 512, MPI_CHAR, send_to, Response, MPI_COMM_WORLD, &status);
-      LOG(INFO) << "**********decode(), v_i: " << v_i << ", decoded_v_i: " << decoded_v_i;
+      LOG(INFO) << "[" << cluster_info.partition_id_ << "]" << "decode() on " << send_to << "v_i " << v_i << " --> " << decoded_v_i;
+      decoded_cache_.Put(v_i, decoded_v_i);
       return decoded_v_i;
     }
   }
@@ -202,6 +208,8 @@ private:
   std::vector<vid_t> local_vid_offset_;
   vid_encoder_opts_t opts_;
 
+  lru_cache_t<VID_T, vid_t> encoded_cache_;
+  lru_cache_t<vid_t, VID_T> decoded_cache_;
   std::thread serve_thread_;
   bool server_started_{false};
   bool continue_serve_{true};
@@ -268,7 +276,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
     LOG(INFO) << "transfer bit cost: " << watch.show("t1") / 1000.0;
   }
   watch.mark("t1");
-  LOG(INFO) << "pid: " << cluster_info.partition_id_ << " local vertex size: " << local_vertex_size;
+  LOG(INFO) << "[" << cluster_info.partition_id_ << "] local vertex size: " << local_vertex_size;
   std::vector<vid_t> local_sizes(cluster_info.partitions_);
   MPI_Allgather(&local_vertex_size, 1, get_mpi_data_type<vid_t>(), &local_sizes[0], 1, get_mpi_data_type<vid_t>(), MPI_COMM_WORLD);
 
@@ -276,7 +284,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
   MPI_Allreduce(&local_vertex_size, &global_vertex_size, 1, get_mpi_data_type<vid_t>(), MPI_SUM, MPI_COMM_WORLD);
   if (0 == cluster_info.partition_id_) {
     for (size_t i = 0; i < local_sizes.size(); ++i) {
-      LOG(INFO) << "partition_" << i << ", local vertex size: " << local_sizes[i];
+      LOG(INFO) << "[" << i << "] local vertex size: " << local_sizes[i];
     }
     LOG(INFO) << "total vertex size: " << global_vertex_size;
   }
@@ -284,7 +292,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
   local_vid_offset_.resize(cluster_info.partitions_+1, 0);
   for (int i = 0; i <= cluster_info.partitions_; ++i) {
     if (i > 0) local_vid_offset_[i] = local_sizes[i - 1] + local_vid_offset_[i - 1];
-    LOG(INFO) << "local_vid_offset_[" << i << "]=" << local_vid_offset_[i];
+    //LOG(INFO) << "local_vid_offset_[" << i << "]=" << local_vid_offset_[i];
   }
 
   watch.mark("t1");
@@ -293,7 +301,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
   for (vid_t i = 0; i < local_vertex_size; ++i) {
     auto local_vid_start = local_vid_offset_[cluster_info.partition_id_];
     id_table.upsert(local_ids_[i], [](vid_t&){ }, i + local_vid_start);
-    LOG(INFO) << "[" << cluster_info.partition_id_ << "]" << local_ids_[i] << " --> " << i + local_vid_start;
+    //LOG(INFO) << "[" << cluster_info.partition_id_ << "]" << local_ids_[i] << " --> " << i + local_vid_start;
   }
 
   lock_table.reset(new locked_table_t(std::move(id_table.lock_table())));
@@ -303,9 +311,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
 
   watch.mark("t1");
   
-  using vid_to_encode_msg_t = vid_encoder_message_t<VID_T>;
-  using vid_encoded_msg_t = vid_encoder_message_t<vid_t>;
-  moodycamel::ConcurrentQueue<vid_encoded_msg_t>  encoded_msg_queue;
+  moodycamel::ConcurrentQueue<vid_encoded_msg_t<VID_T>>  encoded_msg_queue;
   std::atomic<bool> process_continue(true);
 
   std::vector<edge_unit_t<EDATA, vid_t>> items(cache.size()); /// shoule be resized to size of local edges
@@ -316,8 +322,8 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
   //   // 发送编码结果, 接收编码结果
   //   // auto& cluster_info = cluster_info_t::get_instance();
 
-  //   auto __send = [&](bsp_send_callback_t<vid_encoded_msg_t> send) { /// 发送编码结果
-  //     vid_encoded_msg_t encoded_msg;
+  //   auto __send = [&](bsp_send_callback_t<vid_encoded_msg_t<VID_T>> send) { /// 发送编码结果
+  //     vid_encoded_msg_t<VID_T> encoded_msg;
   //     LOG(INFO) << "-------------assist_thread, process_continue start: " << process_continue.load();
   //     while (process_continue.load()) {
   //       if (encoded_msg_queue.try_dequeue(encoded_msg)) {
@@ -330,7 +336,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
   //     LOG(INFO) << "-------------assist_thread, process_continue end: " << process_continue.load();
   //   };
 
-  //   auto __recv = [&](int, bsp_recv_pmsg_t<vid_encoded_msg_t>& pmsg) { /// 接收编码结果
+  //   auto __recv = [&](int, bsp_recv_pmsg_t<vid_encoded_msg_t<VID_T>>& pmsg) { /// 接收编码结果
   //     if (pmsg->is_src_) {
   //       LOG(INFO) << "-----------assist_thread, __recv src: " << "v_i_: " << pmsg->v_i_ << " idx_: " << pmsg->idx_ << " is_src_: " << pmsg->is_src_ << " from_: " << pmsg->from_;
   //       items[pmsg->idx_].src_ = pmsg->v_i_;
@@ -345,14 +351,15 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
   //   // bsp_opts.global_size_    = 64 * MBYTES;
   //   // bsp_opts.local_capacity_ = 32 * PAGESIZE;
 
-  //   int rc = fine_grain_bsp<vid_encoded_msg_t>(__send, __recv, bsp_opts);
+  //   int rc = fine_grain_bsp<vid_encoded_msg_t<VID_T>>(__send, __recv, bsp_opts);
   //   CHECK(0 == rc);
   // });
 
-  LOG(INFO) << "---------------------- spread_task start";
+  watch.mark("t1");
+  LOG(INFO) << "---------------------- send/recv encode req start";
   {
     using edge_unit_spec_t = edge_unit_t<EDATA, VID_T>;
-    using push_context_t = plato::template mepa_sd_context_t<vid_to_encode_msg_t>;
+    using push_context_t = plato::template mepa_sd_context_t<vid_to_encode_msg_t<VID_T>>;
 
     traverse_opts_t traverse_opts;
     traverse_opts.auto_release_ = true;
@@ -366,80 +373,88 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
         size_t idx = k.fetch_add(1, std::memory_order_relaxed);
         items[idx].edata_ = edge->edata_;
         if (opts_.src_need_encode_) {
-          auto send_to = murmur_hash2(&(edge->src_), sizeof(edge->src_)) %
-                         cluster_info.partitions_;
-          auto to_encode_msg = vid_to_encode_msg_t{edge->src_, idx, true, cluster_info.partition_id_};
-          context.send(send_to, to_encode_msg);
+          // if (encoded_cache_.Cached(edge->src_)) {
+          //   LOG(INFO) << "hit encoded cache";
+          //   items[idx].src_ = encoded_cache_.Get(edge->src_);
+          // } else {
+            //LOG(INFO) << "encode cache not cached!!!!, encoded cache size: " << encoded_cache_.Size();
+            auto send_to = murmur_hash2(&(edge->src_), sizeof(edge->src_)) %
+                          cluster_info.partitions_;
+            auto to_encode_msg = vid_to_encode_msg_t<VID_T>{edge->src_, idx, true, cluster_info.partition_id_};
+            context.send(send_to, to_encode_msg);
+          // }
         } else {
           items[idx].src_ = edge->src_;
         }
         if (opts_.dst_need_encode_) {
-          auto send_to = murmur_hash2(&(edge->dst_), sizeof(edge->dst_)) %
-                         cluster_info.partitions_;
-          auto to_encode_msg = vid_to_encode_msg_t{edge->dst_, idx, false, cluster_info.partition_id_};
-          context.send(send_to, to_encode_msg);
+          // if (encoded_cache_.Cached(edge->dst_)) {
+          //   LOG(INFO) << "hit encoded cache";
+          //   items[idx].dst_ = encoded_cache_.Get(edge->dst_);
+          // } else {
+            auto send_to = murmur_hash2(&(edge->dst_), sizeof(edge->dst_)) %
+                          cluster_info.partitions_;
+            auto to_encode_msg = vid_to_encode_msg_t<VID_T>{edge->dst_, idx, false, cluster_info.partition_id_};
+            context.send(send_to, to_encode_msg);
+          // }
         } else {
           items[idx].dst_ = edge->dst_;
         }
     };
 
-    auto __send = [&](bsp_send_callback_t<vid_to_encode_msg_t> send) {
-      auto send_callback = [&](int node, const vid_to_encode_msg_t& message) {
+    auto __send = [&](bsp_send_callback_t<vid_to_encode_msg_t<VID_T>> send) {
+      auto send_callback = [&](int node, const vid_to_encode_msg_t<VID_T>& message) {
         send(node, message);
         // LOG(INFO) << "---------------------send a msg";
       };
 
-      mepa_sd_context_t<vid_to_encode_msg_t> context { send_callback };
+      mepa_sd_context_t<vid_to_encode_msg_t<VID_T>> context { send_callback };
 
       size_t chunk_size = bsp_opts.local_capacity_;
       auto rebind_traversal = bind_task_detail::bind_send_task(std::move(spread_task),
           std::move(context));
-      LOG(INFO) << "--------------------__send: before while";
       while (cache.next_chunk(rebind_traversal, &chunk_size)) { LOG(INFO) << "---------------__send: in while"; }
-      LOG(INFO) << "--------------------__send: after while";
     };
 
-    auto __recv = [&](int p_i, bsp_recv_pmsg_t<vid_to_encode_msg_t>& pmsg) {
-        LOG(INFO) << "------------------__recv: " << "v_i_: " << pmsg->v_i_ << "encoded: " << lock_table->at(pmsg->v_i_) << " idx_: " << pmsg->idx_ << " is_src_: " << pmsg->is_src_ << " from_: " << pmsg->from_; 
-        encoded_msg_queue.enqueue(vid_encoded_msg_t { lock_table->at(pmsg->v_i_), pmsg->idx_, pmsg->is_src_, pmsg->from_ });
+    auto __recv = [&](int p_i, bsp_recv_pmsg_t<vid_to_encode_msg_t<VID_T>>& pmsg) {
+        // LOG(INFO) << "------------------__recv: " << "v_i_: " << pmsg->v_i_ << "encoded: " << lock_table->at(pmsg->v_i_) << " idx_: " << pmsg->idx_ << " is_src_: " << pmsg->is_src_ << " from_: " << pmsg->from_; 
+        encoded_msg_queue.enqueue(vid_encoded_msg_t<VID_T> { pmsg->v_i_, lock_table->at(pmsg->v_i_), pmsg->idx_, pmsg->is_src_, pmsg->from_ });
     };
 
     auto __after_recv_task = [&](void) {
       process_continue.store(false);
-      LOG(INFO) << "__after_recv_task executed, process_continue: " << process_continue.load();
     };
 
     LOG(INFO) << "--------------- spread_task -> fine_grain_bsp start";
-    int rc = fine_grain_bsp<vid_to_encode_msg_t>(__send, __recv, bsp_opts, bsp_detail::dummy_func, __after_recv_task);
+    int rc = fine_grain_bsp<vid_to_encode_msg_t<VID_T>>(__send, __recv, bsp_opts, bsp_detail::dummy_func, __after_recv_task);
     CHECK(0 == rc);
     LOG(INFO) << "--------------- spread_task -> fine_grain_bsp end";
   }
 
-  LOG(INFO) << "----------------assist_thread before join";
+  if (0 == cluster_info.partition_id_) {
+    LOG(INFO) << "send/recv encode req cache cost: " << watch.show("t1") / 1000.0;
+  }
 
+  watch.mark("t1");
+  LOG(INFO) << "---------------------- send/recv encode result start";
   //assist_thread.join();
   {
     // 发送编码结果, 接收编码结果
     // auto& cluster_info = cluster_info_t::get_instance();
 
-    auto __send = [&](bsp_send_callback_t<vid_encoded_msg_t> send) { /// 发送编码结果
-      vid_encoded_msg_t encoded_msg;
-      LOG(INFO) << "-------------assist_thread, process_continue start: " << process_continue.load();
+    auto __send = [&](bsp_send_callback_t<vid_encoded_msg_t<VID_T>> send) { /// 发送编码结果
+      vid_encoded_msg_t<VID_T> encoded_msg;
       while (encoded_msg_queue.try_dequeue(encoded_msg)) {
-          LOG(INFO) << "------------assist_thread, try dequeued a encded_msg" << "v_i_: " << encoded_msg.v_i_ << " idx_: " << encoded_msg.idx_ << " is_src_: " << encoded_msg.is_src_ << " from_: " << encoded_msg.from_;
           send(encoded_msg.from_, encoded_msg);
       }
-      LOG(INFO) << "-------------assist_thread, process_continue end: " << process_continue.load();
     };
 
-    auto __recv = [&](int, bsp_recv_pmsg_t<vid_encoded_msg_t>& pmsg) { /// 接收编码结果
+    auto __recv = [&](int, bsp_recv_pmsg_t<vid_encoded_msg_t<VID_T>>& pmsg) { /// 接收编码结果
       if (pmsg->is_src_) {
-        LOG(INFO) << "-----------assist_thread, __recv src: " << "v_i_: " << pmsg->v_i_ << " idx_: " << pmsg->idx_ << " is_src_: " << pmsg->is_src_ << " from_: " << pmsg->from_;
-        items[pmsg->idx_].src_ = pmsg->v_i_;
+        items[pmsg->idx_].src_ = pmsg->encoded_v_i_;
       } else {
-        LOG(INFO) << "------------assist_thread, __recv dst: " << "v_i_: " << pmsg->v_i_ << " idx_: " << pmsg->idx_ << " is_src_: " << pmsg->is_src_ << " from_: " << pmsg->from_;
-        items[pmsg->idx_].dst_ = pmsg->v_i_;
+        items[pmsg->idx_].dst_ = pmsg->encoded_v_i_;
       }
+      // encoded_cache_.Put(pmsg->v_i_, pmsg->encoded_v_i_);
     };
 
     bsp_opts_t bsp_opts;
@@ -447,15 +462,18 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
     // bsp_opts.global_size_    = 64 * MBYTES;
     // bsp_opts.local_capacity_ = 32 * PAGESIZE;
 
-    int rc = fine_grain_bsp<vid_encoded_msg_t>(__send, __recv, bsp_opts);
+    int rc = fine_grain_bsp<vid_encoded_msg_t<VID_T>>(__send, __recv, bsp_opts);
     CHECK(0 == rc);
   }
-
-  LOG(INFO) << "-----------------assist_thread joined";
-  LOG(INFO) << "----after encoded, items:";
-  for (auto &item : items) {
-    LOG(INFO) << item.src_ << "," << item.dst_;
+  if (0 == cluster_info.partition_id_) {
+    LOG(INFO) << "send/recv encode result cache cost: " << watch.show("t1") / 1000.0;
   }
+
+  // LOG(INFO) << "-----------------assist_thread joined";
+  // LOG(INFO) << "----after encoded, items:";
+  // for (auto &item : items) {
+  //   LOG(INFO) << item.src_ << "," << item.dst_;
+  // }
   callback(&items[0], items.size());
   lock_table.reset(nullptr);
   if (0 == cluster_info.partition_id_) {
