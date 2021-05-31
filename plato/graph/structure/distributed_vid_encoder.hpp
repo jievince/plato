@@ -321,81 +321,81 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
 
   watch.mark("t1");
   
-  moodycamel::ConcurrentQueue<vid_encoded_msg_t<VID_T>>  encoded_msg_queue;
+  std::vector<moodycamel::ConcurrentQueue<std::vector<vid_encoded_msg_t<VID_T>>>>  encoded_msg_vec_queues(cluster_info.partitions_);
   std::atomic<bool> process_continue(true);
 
   std::vector<edge_unit_t<EDATA, vid_t>> items(cache.size()); /// shoule be resized to size of local edges
   std::atomic<size_t> k(0);
 
-  LOG(INFO) << "------------------- assist_thread_start";
-  std::thread assist_thread ([&] {
-    std::atomic<int>         finished_count(0);
-    std::vector<vid_encoded_msg_t<VID_T>> recv_buff(cluster_info.partitions_);
-    std::vector<MPI_Request> recv_requests_vec(cluster_info.partitions_,
-                                               MPI_REQUEST_NULL);
-    for (size_t i = 0; i < recv_requests_vec.size(); ++i) {
-      MPI_Irecv(&recv_buff[i], vid_encoded_msg_t<VID_T>::size(), MPI_CHAR, i,
-                Response, MPI_COMM_WORLD, &recv_requests_vec[i]);
-    }
+  // LOG(INFO) << "------------------- assist_thread_start";
+  // std::thread assist_thread ([&] {
+  //   std::atomic<int>         finished_count(0);
+  //   std::vector<vid_encoded_msg_t<VID_T>> recv_buff(cluster_info.partitions_);
+  //   std::vector<MPI_Request> recv_requests_vec(cluster_info.partitions_,
+  //                                              MPI_REQUEST_NULL);
+  //   for (size_t i = 0; i < recv_requests_vec.size(); ++i) {
+  //     MPI_Irecv(&recv_buff[i], vid_encoded_msg_t<VID_T>::size(), MPI_CHAR, i,
+  //               Response, MPI_COMM_WORLD, &recv_requests_vec[i]);
+  //   }
 
-    auto probe_once =
-      [&](bool continued) {
-        //LOG(INFO) << cluster_info.partition_id_ << "***continue_serve_....";
-        int  flag        = 0;
-        int  index       = 0;
-        int  recv_bytes  = 0;
-        bool has_message = false;
-        MPI_Status status;
+  //   auto probe_once =
+  //     [&](bool continued) {
+  //       //LOG(INFO) << cluster_info.partition_id_ << "***continue_serve_....";
+  //       int  flag        = 0;
+  //       int  index       = 0;
+  //       int  recv_bytes  = 0;
+  //       bool has_message = false;
+  //       MPI_Status status;
 
-        MPI_Testany(recv_requests_vec.size(), recv_requests_vec.data(), &index, &flag, &status);
-        //LOG(INFO) << "MPI_Testanyed, flag: " << flag << ", index: " << index;
-        while (flag && (MPI_UNDEFINED != index)) {
-          // LOG(INFO) << "assist_thread: catched a new res msg";
-          MPI_Get_count(&status, MPI_CHAR, &recv_bytes);
-          if (0 == recv_bytes) {
-            //LOG(INFO) << "assist_thread: cached a Response fin msg";
-            ++finished_count;
-            recv_requests_vec[index] = MPI_REQUEST_NULL;
-          } else {
-            CHECK(recv_bytes == vid_encoded_msg_t<VID_T>::size()) << "recv message's size != vid_encoded_msg_t<VID_T>::size(): " << recv_bytes;
-            auto encoded_msg = recv_buff[index];
-            if (encoded_msg.is_src_) {
-              items[encoded_msg.idx_].src_ = encoded_msg.encoded_v_i_;
-            } else {
-              items[encoded_msg.idx_].dst_ = encoded_msg.encoded_v_i_;
-            }
-            MPI_Irecv(&recv_buff[index], vid_encoded_msg_t<VID_T>::size(), MPI_CHAR, index,
-                      Response, MPI_COMM_WORLD, &recv_requests_vec[index]);
-          }
-          has_message = true;
-          MPI_Testany(recv_requests_vec.size(), recv_requests_vec.data(), &index, &flag, &status);
-        }
+  //       MPI_Testany(recv_requests_vec.size(), recv_requests_vec.data(), &index, &flag, &status);
+  //       //LOG(INFO) << "MPI_Testanyed, flag: " << flag << ", index: " << index;
+  //       while (flag && (MPI_UNDEFINED != index)) {
+  //         // LOG(INFO) << "assist_thread: catched a new res msg";
+  //         MPI_Get_count(&status, MPI_CHAR, &recv_bytes);
+  //         if (0 == recv_bytes) {
+  //           //LOG(INFO) << "assist_thread: cached a Response fin msg";
+  //           ++finished_count;
+  //           recv_requests_vec[index] = MPI_REQUEST_NULL;
+  //         } else {
+  //           CHECK(recv_bytes == vid_encoded_msg_t<VID_T>::size()) << "recv message's size != vid_encoded_msg_t<VID_T>::size(): " << recv_bytes;
+  //           auto encoded_msg = recv_buff[index];
+  //           if (encoded_msg.is_src_) {
+  //             items[encoded_msg.idx_].src_ = encoded_msg.encoded_v_i_;
+  //           } else {
+  //             items[encoded_msg.idx_].dst_ = encoded_msg.encoded_v_i_;
+  //           }
+  //           MPI_Irecv(&recv_buff[index], vid_encoded_msg_t<VID_T>::size(), MPI_CHAR, index,
+  //                     Response, MPI_COMM_WORLD, &recv_requests_vec[index]);
+  //         }
+  //         has_message = true;
+  //         MPI_Testany(recv_requests_vec.size(), recv_requests_vec.data(), &index, &flag, &status);
+  //       }
 
-        return has_message;
-      };
+  //       return has_message;
+  //     };
 
-    uint32_t idle_times = 0;
-    while (finished_count < cluster_info.partitions_) {
-      bool busy = probe_once(false);
+  //   uint32_t idle_times = 0;
+  //   while (finished_count < cluster_info.partitions_) {
+  //     bool busy = probe_once(false);
 
-      idle_times += (uint32_t)(false == busy);
-      if (idle_times > 10) {
-        poll(nullptr, 0, 1);
-        idle_times = 0;
-      } else if (false == busy) {
-        pthread_yield();
-      }
-    }
-    probe_once(false);
+  //     idle_times += (uint32_t)(false == busy);
+  //     if (idle_times > 10) {
+  //       poll(nullptr, 0, 1);
+  //       idle_times = 0;
+  //     } else if (false == busy) {
+  //       pthread_yield();
+  //     }
+  //   }
+  //   probe_once(false);
 
-    for (size_t r_i = 0; r_i < recv_requests_vec.size(); ++r_i) {
-      if (MPI_REQUEST_NULL != recv_requests_vec[r_i]) {
-        MPI_Cancel(&recv_requests_vec[r_i]);
-        MPI_Wait(&recv_requests_vec[r_i], MPI_STATUS_IGNORE); /// 同步wait
-      }
-    }
-    LOG(INFO) << cluster_info.partition_id_ << " assist thread exited..........................................................";
-  });
+  //   for (size_t r_i = 0; r_i < recv_requests_vec.size(); ++r_i) {
+  //     if (MPI_REQUEST_NULL != recv_requests_vec[r_i]) {
+  //       MPI_Cancel(&recv_requests_vec[r_i]);
+  //       MPI_Wait(&recv_requests_vec[r_i], MPI_STATUS_IGNORE); /// 同步wait
+  //     }
+  //   }
+  //   LOG(INFO) << cluster_info.partition_id_ << " assist thread exited..........................................................";
+  // });
   // std::thread assist_thread ([&] {
   //   // 发送编码结果, 接收编码结果
   //   // auto& cluster_info = cluster_info_t::get_instance();
@@ -446,6 +446,8 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
     bsp_opts_t bsp_opts;
     // bsp_opts.global_size_    = 64 * MBYTES;
     // bsp_opts.local_capacity_ = 32 * PAGESIZE;
+
+    thread_local std::vector<std::vector<vid_encoded_msg_t<VID_T>>> *encoded_msg_vecs;
     
     auto spread_task = [&](const push_context_t& context, size_t i, edge_unit_spec_t *edge) { /// 发送编码请求--> 发送读cache的ShuffleFin
         size_t idx = k.fetch_add(1, std::memory_order_relaxed);
@@ -497,16 +499,40 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
         // LOG(INFO) << "------------------__recv: " << "v_i_: " << pmsg->v_i_ << "encoded: " << lock_table->at(pmsg->v_i_) << " idx_: " << pmsg->idx_ << " is_src_: " << pmsg->is_src_ << " from_: " << pmsg->from_;
         vid_encoded_msg_t<VID_T> encoded_msg{ pmsg->v_i_, lock_table->at(pmsg->v_i_), pmsg->idx_, pmsg->is_src_, pmsg->from_ };
         // encoded_msg_queue.enqueue(encoded_msg);
-        MPI_Send(&encoded_msg, vid_encoded_msg_t<VID_T>::size(), MPI_CHAR, p_i, Response, MPI_COMM_WORLD);
+        // MPI_Send(&encoded_msg, vid_encoded_msg_t<VID_T>::size(), MPI_CHAR, p_i, Response, MPI_COMM_WORLD);
+        auto &vec = (*encoded_msg_vecs)[p_i];
+        vec.emplace_back(std::move(encoded_msg));
+        if (vec.size() >= bsp_opts.local_capacity_) {
+          encoded_msg_vec_queues[p_i].enqueue(std::vector<vid_encoded_msg_t<VID_T>>(vec));
+          vec.clear();
+        }
+    };
+
+    auto __before_recv_task = [&]() {
+      encoded_msg_vecs = new std::vector<std::vector<vid_encoded_msg_t<VID_T>>>(cluster_info.partitions_);
+      for (auto& vec : *encoded_msg_vecs) {
+        vec.reserve(bsp_opts.local_capacity_);
+      }
+    };
+
+    auto __after_recv_task = [&]() {
+      for (int p_i = 0; p_i < cluster_info.partitions_; ++p_i) {
+        auto &vec = (*encoded_msg_vecs)[p_i];
+        if (!vec.empty()) {
+          encoded_msg_vec_queues[p_i].enqueue(std::vector<vid_encoded_msg_t<VID_T>>(vec));
+        }
+      }
     };
 
     LOG(INFO) << "--------------- spread_task -> fine_grain_bsp start";
-    int rc = fine_grain_bsp<vid_to_encode_msg_t<VID_T>>(__send, __recv, bsp_opts, bsp_detail::dummy_func, bsp_detail::dummy_func);
+    int rc = fine_grain_bsp<vid_to_encode_msg_t<VID_T>>(__send, __recv, bsp_opts, __before_recv_task, __after_recv_task);
     CHECK(0 == rc);
     LOG(INFO) << "--------------- spread_task -> fine_grain_bsp end";
-    for (int p_i = 0; p_i < cluster_info.partitions_; ++p_i) {
-      MPI_Send(nullptr, 0, MPI_CHAR, p_i, Response, MPI_COMM_WORLD);
-    }
+    // for (int p_i = 0; p_i < cluster_info.partitions_; ++p_i) {
+    //   LOG(INFO) << "before send Response Fin";
+    //   MPI_Send(nullptr, 0, MPI_CHAR, p_i, Response, MPI_COMM_WORLD);
+    //   LOG(INFO) << "after send Response Fin";
+    // }
   }
 
   if (0 == cluster_info.partition_id_) {
@@ -516,35 +542,40 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
   watch.mark("t1");
   LOG(INFO) << "---------------------- send/recv encode result start";
   //assist_thread.join();
-  // {
-  //   // 发送编码结果, 接收编码结果
-  //   // auto& cluster_info = cluster_info_t::get_instance();
 
-  //   auto __send = [&](bsp_send_callback_t<vid_encoded_msg_t<VID_T>> send) { /// 发送编码结果
-  //     vid_encoded_msg_t<VID_T> encoded_msg;
-  //     while (encoded_msg_queue.try_dequeue(encoded_msg)) {
-  //         send(encoded_msg.from_, encoded_msg);
-  //     }
-  //   };
+  {
+    std::atomic<size_t> cur(0);
 
-  //   auto __recv = [&](int, bsp_recv_pmsg_t<vid_encoded_msg_t<VID_T>>& pmsg) { /// 接收编码结果
-  //     if (pmsg->is_src_) {
-  //       items[pmsg->idx_].src_ = pmsg->encoded_v_i_;
-  //     } else {
-  //       items[pmsg->idx_].dst_ = pmsg->encoded_v_i_;
-  //     }
-  //     // encoded_cache_.Put(pmsg->v_i_, pmsg->encoded_v_i_);
-  //   };
+    auto __send = [&](bsp_send_callback_t<vid_encoded_msg_t<VID_T>> send) { /// 发送编码结果
+      std::vector<vid_encoded_msg_t<VID_T>> encoded_msg_vec;
+      int p_i = cur.fetch_add(1, std::memory_order_relaxed);
+      p_i %= cluster_info.partitions_;
+      CHECK(p_i >= 0 && p_i < encoded_msg_vec_queues.size());
+      while (encoded_msg_vec_queues[p_i].try_dequeue(encoded_msg_vec)) {
+        for (auto& encoded_msg : encoded_msg_vec) {
+          send(p_i, encoded_msg);
+        }
+      }
+    };
 
-  //   bsp_opts_t bsp_opts;
-  //   // bsp_opts.threads_ = 1;
-  //   // bsp_opts.global_size_    = 64 * MBYTES;
-  //   // bsp_opts.local_capacity_ = 32 * PAGESIZE;
+    auto __recv = [&](int, bsp_recv_pmsg_t<vid_encoded_msg_t<VID_T>>& pmsg) { /// 接收编码结果
+      if (pmsg->is_src_) {
+        items[pmsg->idx_].src_ = pmsg->encoded_v_i_;
+      } else {
+        items[pmsg->idx_].dst_ = pmsg->encoded_v_i_;
+      }
+      // encoded_cache_.Put(pmsg->v_i_, pmsg->encoded_v_i_);
+    };
 
-  //   int rc = fine_grain_bsp<vid_encoded_msg_t<VID_T>>(__send, __recv, bsp_opts);
-  //   CHECK(0 == rc);
-  // }
-  assist_thread.join();
+    bsp_opts_t bsp_opts;
+    // bsp_opts.threads_ = 1;
+    // bsp_opts.global_size_    = 64 * MBYTES;
+    // bsp_opts.local_capacity_ = 32 * PAGESIZE;
+
+    int rc = fine_grain_bsp<vid_encoded_msg_t<VID_T>>(__send, __recv, bsp_opts);
+    CHECK(0 == rc);
+  }
+  //assist_thread.join();
   if (0 == cluster_info.partition_id_) {
     LOG(INFO) << "send/recv encode result cache cost: " << watch.show("t1") / 1000.0;
   }
@@ -556,10 +587,10 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
   // }
   callback(&items[0], items.size());
   lock_table.reset(nullptr);
-  if (0 == cluster_info.partition_id_) {
+  //if (0 == cluster_info.partition_id_) {
     LOG(INFO) << "get encode cache cost: " << watch.show("t1") / 1000.0;
     LOG(INFO) << "encode total cost: " << watch.show("t0") / 1000.0;
-  }
+  //}
 
 }
 
