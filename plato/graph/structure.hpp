@@ -386,15 +386,19 @@ std::shared_ptr<CACHE<EDATA, vid_t>> load_edges_cache(
     }
   }
 
+  LOG(INFO) << "mark 1";
   MPI_Allreduce(MPI_IN_PLACE, &edges, 1, get_mpi_data_type<eid_t>(), MPI_SUM, MPI_COMM_WORLD);
+  LOG(INFO) << "mark 2";
   allreduce(MPI_IN_PLACE, v_bitmap.data_, word_offset(v_bitmap.size_) + 1, get_mpi_data_type<uint64_t>(),
       MPI_BOR, MPI_COMM_WORLD);
+  LOG(INFO) << "mark 3";
 
   if (pginfo) {
     pginfo->edges_    = edges; // graph_info记录的是全图数据
     pginfo->vertices_ = v_bitmap.count();
     pginfo->max_v_i_  = v_bitmap.msb();
   }
+  LOG(INFO) << "mark 4";
 
   return cache;
 }
