@@ -541,7 +541,7 @@ int fine_grain_bsp (
     std::vector<MPI_Request> requests_vec(opts.flying_recv_, MPI_REQUEST_NULL);
 
     for (size_t r_i = 0; r_i < requests_vec.size(); ++r_i) {
-      MPI_Irecv(buffs_vec[r_i].get(), buff_size, MPI_CHAR, MPI_ANY_SOURCE, MPI_ANY_TAG, opts.comm_, &requests_vec[r_i]);
+      MPI_Irecv(buffs_vec[r_i].get(), buff_size, MPI_CHAR, MPI_ANY_SOURCE, Shuffle, opts.comm_, &requests_vec[r_i]);
     }
 
     auto probe_once =
@@ -554,12 +554,11 @@ int fine_grain_bsp (
 
         MPI_Testany(requests_vec.size(), requests_vec.data(), &index, &flag, &status);
         while (flag && (MPI_UNDEFINED != index)) {
-          if (ShuffleFin == status.MPI_TAG) {
+          MPI_Get_count(&status, MPI_CHAR, &recv_bytes);
+          if (0 == recv_bytes) {
             ++finished_count;
           } else {  // call recv_task
             char* buff = buffs_vec[index].get();
-
-            MPI_Get_count(&status, MPI_CHAR, &recv_bytes);
             CHECK(recv_bytes >= static_cast<int>(sizeof(chunk_tail_t))) << "recv message too small: " << recv_bytes;
 
             while (recv_bytes > 0) {  // push task in queue
@@ -593,7 +592,7 @@ int fine_grain_bsp (
           found = true;
           processing[i] = false;
           MPI_Irecv(buffs_vec[i].get(), buff_size, MPI_CHAR, MPI_ANY_SOURCE, /// 上一个请求的msg已经被consume了,可以接收下一个请求了
-              MPI_ANY_TAG, opts.comm_, &requests_vec[i]);
+              Shuffle, opts.comm_, &requests_vec[i]);
         }
       }
       return found;
@@ -854,6 +853,7 @@ int fine_grain_bsp (
 
         reqlck.lock();
         reqlist.emplace_back(std::move(std::make_pair(MPI_Request(), std::move(oss))));
+        CHECK(buff.size_ > 0);
         MPI_Isend(buff.data_, buff.size_, MPI_CHAR, p_i, Shuffle, opts.comm_,
             &reqlist.back().first);
         reqlck.unlock();
@@ -899,6 +899,7 @@ int fine_grain_bsp (
           auto buff = oss.get_intrusive_buffer();
 
           reqlist.emplace_back(std::move(std::make_pair(MPI_Request(), std::move(oss))));
+          CHECK(buff.size_ > 0);
           MPI_Isend(buff.data_, buff.size_, MPI_CHAR, p_i, Shuffle, opts.comm_,
               &reqlist.back().first);
         }
@@ -918,7 +919,7 @@ int fine_grain_bsp (
   }
 
   for (int p_i = 0; p_i < cluster_info.partitions_; ++p_i) {  //  broadcast finish signal
-    MPI_Send(nullptr, 0, MPI_CHAR, p_i, ShuffleFin, opts.comm_);
+    MPI_Send(nullptr, 0, MPI_CHAR, p_i, Shuffle, opts.comm_);
   }
 
   recv_assist_thread.join();
