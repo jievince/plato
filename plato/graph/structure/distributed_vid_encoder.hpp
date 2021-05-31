@@ -433,6 +433,42 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
   //   CHECK(0 == rc);
   // });
 
+  std::thread assist_thread([&]() {
+    std::atomic<size_t> cur(0);
+
+    auto __send = [&](bsp_send_callback_t<vid_encoded_msg_t<VID_T>> send) { /// 发送编码结果
+      std::vector<vid_encoded_msg_t<VID_T>> encoded_msg_vec;
+      int p_i = cur.fetch_add(1, std::memory_order_relaxed);
+      p_i %= cluster_info.partitions_;
+      CHECK(p_i >= 0 && p_i < encoded_msg_vec_queues.size());
+      while (process_continue.load()) {
+        if (encoded_msg_vec_queues[p_i].try_dequeue(encoded_msg_vec)) {
+          for (auto& encoded_msg : encoded_msg_vec) {
+            send(p_i, encoded_msg);
+          }
+        }
+      }
+    };
+
+    auto __recv = [&](int, bsp_recv_pmsg_t<vid_encoded_msg_t<VID_T>>& pmsg) { /// 接收编码结果
+      if (pmsg->is_src_) {
+        items[pmsg->idx_].src_ = pmsg->encoded_v_i_;
+      } else {
+        items[pmsg->idx_].dst_ = pmsg->encoded_v_i_;
+      }
+      // encoded_cache_.Put(pmsg->v_i_, pmsg->encoded_v_i_);
+    };
+
+    bsp_opts_t bsp_opts;
+    // bsp_opts.threads_ = 1;
+    // bsp_opts.global_size_    = 64 * MBYTES;
+    // bsp_opts.local_capacity_ = 32 * PAGESIZE;
+    bsp_opts.tag_ = Response;
+
+    int rc = fine_grain_bsp<vid_encoded_msg_t<VID_T>>(__send, __recv, bsp_opts);
+    CHECK(0 == rc);
+  });
+
   watch.mark("t1");
   LOG(INFO) << "---------------------- send/recv encode req start";
   {
@@ -528,6 +564,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
     int rc = fine_grain_bsp<vid_to_encode_msg_t<VID_T>>(__send, __recv, bsp_opts, __before_recv_task, __after_recv_task);
     CHECK(0 == rc);
     LOG(INFO) << "--------------- spread_task -> fine_grain_bsp end";
+    process_continue.store(false);
     // for (int p_i = 0; p_i < cluster_info.partitions_; ++p_i) {
     //   LOG(INFO) << "before send Response Fin";
     //   MPI_Send(nullptr, 0, MPI_CHAR, p_i, Response, MPI_COMM_WORLD);
@@ -541,44 +578,42 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
 
   watch.mark("t1");
   LOG(INFO) << "---------------------- send/recv encode result start";
+  assist_thread.join();
+
+  // {
+  //   std::atomic<size_t> cur(0);
+
+  //   auto __send = [&](bsp_send_callback_t<vid_encoded_msg_t<VID_T>> send) { /// 发送编码结果
+  //     std::vector<vid_encoded_msg_t<VID_T>> encoded_msg_vec;
+  //     int p_i = cur.fetch_add(1, std::memory_order_relaxed);
+  //     p_i %= cluster_info.partitions_;
+  //     CHECK(p_i >= 0 && p_i < encoded_msg_vec_queues.size());
+  //     while (encoded_msg_vec_queues[p_i].try_dequeue(encoded_msg_vec)) {
+  //       for (auto& encoded_msg : encoded_msg_vec) {
+  //         send(p_i, encoded_msg);
+  //       }
+  //     }
+  //   };
+
+  //   auto __recv = [&](int, bsp_recv_pmsg_t<vid_encoded_msg_t<VID_T>>& pmsg) { /// 接收编码结果
+  //     if (pmsg->is_src_) {
+  //       items[pmsg->idx_].src_ = pmsg->encoded_v_i_;
+  //     } else {
+  //       items[pmsg->idx_].dst_ = pmsg->encoded_v_i_;
+  //     }
+  //     // encoded_cache_.Put(pmsg->v_i_, pmsg->encoded_v_i_);
+  //   };
+
+  //   bsp_opts_t bsp_opts;
+  //   // bsp_opts.threads_ = 1;
+  //   // bsp_opts.global_size_    = 64 * MBYTES;
+  //   // bsp_opts.local_capacity_ = 32 * PAGESIZE;
+
+  //   int rc = fine_grain_bsp<vid_encoded_msg_t<VID_T>>(__send, __recv, bsp_opts);
+  //   CHECK(0 == rc);
+  // }
   //assist_thread.join();
-
-  {
-    std::atomic<size_t> cur(0);
-
-    auto __send = [&](bsp_send_callback_t<vid_encoded_msg_t<VID_T>> send) { /// 发送编码结果
-      std::vector<vid_encoded_msg_t<VID_T>> encoded_msg_vec;
-      int p_i = cur.fetch_add(1, std::memory_order_relaxed);
-      p_i %= cluster_info.partitions_;
-      CHECK(p_i >= 0 && p_i < encoded_msg_vec_queues.size());
-      while (encoded_msg_vec_queues[p_i].try_dequeue(encoded_msg_vec)) {
-        for (auto& encoded_msg : encoded_msg_vec) {
-          send(p_i, encoded_msg);
-        }
-      }
-    };
-
-    auto __recv = [&](int, bsp_recv_pmsg_t<vid_encoded_msg_t<VID_T>>& pmsg) { /// 接收编码结果
-      if (pmsg->is_src_) {
-        items[pmsg->idx_].src_ = pmsg->encoded_v_i_;
-      } else {
-        items[pmsg->idx_].dst_ = pmsg->encoded_v_i_;
-      }
-      // encoded_cache_.Put(pmsg->v_i_, pmsg->encoded_v_i_);
-    };
-
-    bsp_opts_t bsp_opts;
-    // bsp_opts.threads_ = 1;
-    // bsp_opts.global_size_    = 64 * MBYTES;
-    // bsp_opts.local_capacity_ = 32 * PAGESIZE;
-
-    int rc = fine_grain_bsp<vid_encoded_msg_t<VID_T>>(__send, __recv, bsp_opts);
-    CHECK(0 == rc);
-  }
-  //assist_thread.join();
-  if (0 == cluster_info.partition_id_) {
-    LOG(INFO) << "send/recv encode result cache cost: " << watch.show("t1") / 1000.0;
-  }
+  LOG(INFO) << "[" << cluster_info.partition_id_ << "]: send/recv encode result cache cost: " << watch.show("t1") / 1000.0;
 
   // LOG(INFO) << "-----------------assist_thread joined";
   // LOG(INFO) << "----after encoded, items:";
@@ -587,10 +622,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
   // }
   callback(&items[0], items.size());
   lock_table.reset(nullptr);
-  //if (0 == cluster_info.partition_id_) {
-    LOG(INFO) << "get encode cache cost: " << watch.show("t1") / 1000.0;
-    LOG(INFO) << "encode total cost: " << watch.show("t0") / 1000.0;
-  //}
+  LOG(INFO) << "[" << cluster_info.partition_id_ << "]: encode total cost: " << watch.show("t0") / 1000.0;
 
 }
 

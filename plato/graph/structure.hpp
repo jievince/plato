@@ -316,16 +316,12 @@ void load_edges_cache_with_encoder(
   } else {
     read_from_files<EDATA, VID_T>(path, format, decoder, read_callback);
   }
-  if (0 == cluster_info.partition_id_) {
-    LOG(INFO) << "read edges cache cost: " << watch.show("t1") / 1000.0 << "s";
-  }
+  LOG(INFO) << "[" << cluster_info.partition_id_ << "]: read edges cache cost: " << watch.show("t1") / 1000.0 << "s";
 
   watch.mark("t1");
   vid_encoder->encode(*pcache, callback);
-  if (0 == cluster_info.partition_id_) {
-    LOG(INFO) << "vid encode cost: " << watch.show("t1") / 1000.0 << "s";
-    LOG(INFO) << "load edges cache with encoder total cost: " << watch.show("t0") / 1000.0 << "s";
-  }
+  LOG(INFO) << "[" << cluster_info.partition_id_ << "]: vid encode cost: " << watch.show("t1") / 1000.0 << "s";
+  LOG(INFO) << "[" << cluster_info.partition_id_ << "]: load edges cache with encoder total cost: " << watch.show("t0") / 1000.0 << "s";
 }
 
 /*

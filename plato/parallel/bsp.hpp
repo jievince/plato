@@ -68,6 +68,7 @@ struct bsp_opts_t {
 
   uint32_t local_capacity_        = 4 * PAGESIZE; // message count
   uint32_t batch_size_            = 1;            // batch process #batch_size_ messages
+  int      tag_                   = Shuffle; // MPI tag
   MPI_Comm comm_                  = MPI_COMM_WORLD;
 };
 
@@ -541,7 +542,7 @@ int fine_grain_bsp (
     std::vector<MPI_Request> requests_vec(opts.flying_recv_, MPI_REQUEST_NULL);
 
     for (size_t r_i = 0; r_i < requests_vec.size(); ++r_i) {
-      MPI_Irecv(buffs_vec[r_i].get(), buff_size, MPI_CHAR, MPI_ANY_SOURCE, Shuffle, opts.comm_, &requests_vec[r_i]);
+      MPI_Irecv(buffs_vec[r_i].get(), buff_size, MPI_CHAR, MPI_ANY_SOURCE, opts.tag_, opts.comm_, &requests_vec[r_i]);
     }
 
     auto probe_once =
@@ -592,7 +593,7 @@ int fine_grain_bsp (
           found = true;
           processing[i] = false;
           MPI_Irecv(buffs_vec[i].get(), buff_size, MPI_CHAR, MPI_ANY_SOURCE, /// 上一个请求的msg已经被consume了,可以接收下一个请求了
-              Shuffle, opts.comm_, &requests_vec[i]);
+              opts.tag_, opts.comm_, &requests_vec[i]);
         }
       }
       return found;
@@ -854,7 +855,7 @@ int fine_grain_bsp (
         reqlck.lock();
         reqlist.emplace_back(std::move(std::make_pair(MPI_Request(), std::move(oss))));
         CHECK(buff.size_ > 0);
-        MPI_Isend(buff.data_, buff.size_, MPI_CHAR, p_i, Shuffle, opts.comm_,
+        MPI_Isend(buff.data_, buff.size_, MPI_CHAR, p_i, opts.tag_, opts.comm_,
             &reqlist.back().first);
         reqlck.unlock();
       } else {
@@ -900,7 +901,7 @@ int fine_grain_bsp (
 
           reqlist.emplace_back(std::move(std::make_pair(MPI_Request(), std::move(oss))));
           CHECK(buff.size_ > 0);
-          MPI_Isend(buff.data_, buff.size_, MPI_CHAR, p_i, Shuffle, opts.comm_,
+          MPI_Isend(buff.data_, buff.size_, MPI_CHAR, p_i, opts.tag_, opts.comm_,
               &reqlist.back().first);
         }
       }
@@ -919,7 +920,7 @@ int fine_grain_bsp (
   }
 
   for (int p_i = 0; p_i < cluster_info.partitions_; ++p_i) {  //  broadcast finish signal
-    MPI_Send(nullptr, 0, MPI_CHAR, p_i, Shuffle, opts.comm_);
+    MPI_Send(nullptr, 0, MPI_CHAR, p_i, opts.tag_, opts.comm_);
   }
 
   recv_assist_thread.join();
