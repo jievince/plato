@@ -293,9 +293,6 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
   vid_t global_vertex_size;
   MPI_Allreduce(&local_vertex_size, &global_vertex_size, 1, get_mpi_data_type<vid_t>(), MPI_SUM, MPI_COMM_WORLD);
   if (0 == cluster_info.partition_id_) {
-    for (size_t i = 0; i < local_sizes.size(); ++i) {
-      LOG(INFO) << "[" << i << "] local vertex size: " << local_sizes[i];
-    }
     LOG(INFO) << "total vertex size: " << global_vertex_size;
   }
 
@@ -435,6 +432,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
 
   std::thread assist_thread([&]() {
     std::atomic<size_t> cur(0);
+    std::atomic<size_t> recved_msg(0);
 
     auto __send = [&](bsp_send_callback_t<vid_encoded_msg_t<VID_T>> send) { /// 发送编码结果
       std::vector<vid_encoded_msg_t<VID_T>> encoded_msg_vec;
@@ -456,6 +454,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
       } else {
         items[pmsg->idx_].dst_ = pmsg->encoded_v_i_;
       }
+      recved_msg.fetch_add(1);
       // encoded_cache_.Put(pmsg->v_i_, pmsg->encoded_v_i_);
     };
 
@@ -467,6 +466,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
 
     int rc = fine_grain_bsp<vid_encoded_msg_t<VID_T>>(__send, __recv, bsp_opts);
     CHECK(0 == rc);
+    CHECK(recved_msg == cache.size() * 2);
   });
 
   watch.mark("t1");
