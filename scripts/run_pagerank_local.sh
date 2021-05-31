@@ -15,13 +15,14 @@ WCORES=4
 INPUT=${INPUT:="$ROOT_DIR/data/graph/non_coding_5_7.csv"}
 OUTPUT=${OUTPUT:="/tmp/pagerank"}
 IS_DIRECTED=${IS_DIRECTED:=false}
+NEED_ENCODE=${NEED_ENCODE:=true}
 EPS=${EPS:=0.0001}
 DAMPING=${DAMPING:=0.85}
 ITERATIONS=${ITERATIONS:=100}
 
 # param
 PARAMS+=" --threads ${WCORES}"
-PARAMS+=" --input ${INPUT} --output ${OUTPUT} --is_directed=${IS_DIRECTED}"
+PARAMS+=" --input ${INPUT} --output ${OUTPUT} --is_directed=${IS_DIRECTED} --need_encode=${NEED_ENCODE}"
 PARAMS+=" --iterations ${ITERATIONS} --eps ${EPS} --damping ${DAMPING}"
 
 # mpich
