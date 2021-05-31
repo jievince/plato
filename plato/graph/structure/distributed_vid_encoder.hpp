@@ -109,7 +109,7 @@ public:
             while (flag && (MPI_UNDEFINED != index)) {
                 auto local_vid_start = local_vid_offset_[cluster_info.partition_id_];
                 auto local_vid_end = local_vid_offset_[cluster_info.partition_id_ + 1];
-                LOG(INFO) << "***catched a new req msg";
+                //LOG(INFO) << "***catched a new req msg";
                 MPI_Get_count(&status, MPI_CHAR, &recv_bytes);
 
                 CHECK(recv_bytes == sizeof(vid_t)) << "recv message's size != sizeof(vid_t): " << recv_bytes;
@@ -173,20 +173,22 @@ public:
     auto local_vid_end = local_vid_offset_[cluster_info.partition_id_ + 1];
 
     if (v_i >= local_vid_start && v_i < local_vid_end) {
-      LOG(INFO) << "[" << cluster_info.partition_id_ << "]" << "decode() locally " << "v_i " << v_i << " --> " << local_ids_[v_i-local_vid_start];
+      //LOG(INFO) << "[" << cluster_info.partition_id_ << "]" << "decode() locally " << "v_i " << v_i << " --> " << local_ids_[v_i-local_vid_start];
       return local_ids_[v_i-local_vid_start];
-    } else if (decoded_cache_.Cached(v_i)) {
-      LOG(INFO) << "hit decoded cache";
-      return decoded_cache_.Get(v_i);
-    } else {
-      LOG(INFO) << "decode cache not cached!!!!, decoded cache size: " << decoded_cache_.Size();
+    }
+    // else if (decoded_cache_.Cached(v_i)) {
+    //   LOG(INFO) << "hit decoded cache";
+    //   return decoded_cache_.Get(v_i);
+    // }
+    else {
+      //LOG(INFO) << "decode cache not cached!!!!, decoded cache size: " << decoded_cache_.Size();
       VID_T decoded_v_i;
       MPI_Status status;
       auto send_to = get_part_id(v_i);
       MPI_Send(&v_i, sizeof(vid_t), MPI_CHAR, send_to, Request, MPI_COMM_WORLD);
       MPI_Recv(&decoded_v_i, 512, MPI_CHAR, send_to, Response, MPI_COMM_WORLD, &status);
-      LOG(INFO) << "[" << cluster_info.partition_id_ << "]" << "decode() on " << send_to << "v_i " << v_i << " --> " << decoded_v_i;
-      decoded_cache_.Put(v_i, decoded_v_i);
+      //LOG(INFO) << "[" << cluster_info.partition_id_ << "]" << "decode() on " << send_to << "v_i " << v_i << " --> " << decoded_v_i;
+      //decoded_cache_.Put(v_i, decoded_v_i);
       return decoded_v_i;
     }
   }
@@ -351,7 +353,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
           // LOG(INFO) << "assist_thread: catched a new res msg";
           MPI_Get_count(&status, MPI_CHAR, &recv_bytes);
           if (0 == recv_bytes) {
-            LOG(INFO) << "assist_thread: cached a Response fin msg";
+            //LOG(INFO) << "assist_thread: cached a Response fin msg";
             ++finished_count;
             recv_requests_vec[index] = MPI_REQUEST_NULL;
           } else {
