@@ -326,6 +326,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
   std::atomic<size_t> k(0);
 
   std::atomic<size_t> sended(0);
+  //std::atomic<size_t> cache_hits(0);
 
   // LOG(INFO) << "------------------- assist_thread_start";
   // std::thread assist_thread ([&] {
@@ -500,6 +501,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
           // if (encoded_cache_.Cached(edge->src_)) {
           //   LOG(INFO) << "hit encoded cache";
           //   items[idx].src_ = encoded_cache_.Get(edge->src_);
+          //   cache_hits.fetch_add(1);
           // } else {
             //LOG(INFO) << "encode cache not cached!!!!, encoded cache size: " << encoded_cache_.Size();
             auto send_to = murmur_hash2(&(edge->src_), sizeof(edge->src_)) %
@@ -515,6 +517,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
           // if (encoded_cache_.Cached(edge->dst_)) {
           //   LOG(INFO) << "hit encoded cache";
           //   items[idx].dst_ = encoded_cache_.Get(edge->dst_);
+          //   cache_hits.fetch_add(1);
           // } else {
             auto send_to = murmur_hash2(&(edge->dst_), sizeof(edge->dst_)) %
                           cluster_info.partitions_;
@@ -624,6 +627,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
   //   CHECK(0 == rc);
   // }
   //assist_thread.join();
+  //LOG(INFO) << "[" << cluster_info.partition_id_ << "]: total req: " << cache.size()*2 << ", cache hits: " << cache_hits << ", ratio: " << (double)cache_hits / (cache.size()*2);
   LOG(INFO) << "[" << cluster_info.partition_id_ << "]: send/recv encode result cache cost: " << watch.show("t1") / 1000.0;
 
   // LOG(INFO) << "-----------------assist_thread joined";
