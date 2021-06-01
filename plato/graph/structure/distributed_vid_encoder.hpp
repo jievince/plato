@@ -466,7 +466,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
 
     int rc = fine_grain_bsp<vid_encoded_msg_t<VID_T>>(__send, __recv, bsp_opts);
     CHECK(0 == rc);
-    CHECK(recved_msg == cache.size() * 2);
+    CHECK(recved_msg == cache.size() * 2) << "recved_msg count: " << recved_msg << ", cache.size()*2: " << cache.size()*2;
   });
 
   watch.mark("t1");

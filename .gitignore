@@ -56,3 +56,5 @@ CMakeLists.txt
 3rd/nebula-cpp/
 
 # scripts/
+
+./build.sh
