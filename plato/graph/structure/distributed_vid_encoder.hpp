@@ -318,11 +318,14 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
 
   watch.mark("t1");
   
-  std::vector<moodycamel::ConcurrentQueue<std::vector<vid_encoded_msg_t<VID_T>>>>  encoded_msg_vec_queues(cluster_info.partitions_);
+  moodycamel::ConcurrentQueue<std::vector<vid_encoded_msg_t<VID_T>>>  encoded_msg_vec_queue;
+  std::atomic<size_t> chunk_left(0);
   std::atomic<bool> process_continue(true);
 
   std::vector<edge_unit_t<EDATA, vid_t>> items(cache.size()); /// shoule be resized to size of local edges
   std::atomic<size_t> k(0);
+
+  std::atomic<size_t> sended(0);
 
   // LOG(INFO) << "------------------- assist_thread_start";
   // std::thread assist_thread ([&] {
@@ -432,18 +435,16 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
 
   std::thread assist_thread([&]() {
     std::atomic<size_t> cur(0);
-    std::atomic<size_t> recved_msg(0);
+    std::atomic<size_t> recved(0);
 
     auto __send = [&](bsp_send_callback_t<vid_encoded_msg_t<VID_T>> send) { /// 发送编码结果
       std::vector<vid_encoded_msg_t<VID_T>> encoded_msg_vec;
-      int p_i = cur.fetch_add(1, std::memory_order_relaxed);
-      p_i %= cluster_info.partitions_;
-      CHECK(p_i >= 0 && p_i < encoded_msg_vec_queues.size());
-      while (process_continue.load()) {
-        if (encoded_msg_vec_queues[p_i].try_dequeue(encoded_msg_vec)) {
+      while (process_continue.load() || chunk_left.load()) {
+        if (encoded_msg_vec_queue.try_dequeue(encoded_msg_vec)) {
           for (auto& encoded_msg : encoded_msg_vec) {
-            send(p_i, encoded_msg);
+            send(encoded_msg.from_, encoded_msg);
           }
+          chunk_left.fetch_sub(1);
         }
       }
     };
@@ -454,7 +455,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
       } else {
         items[pmsg->idx_].dst_ = pmsg->encoded_v_i_;
       }
-      recved_msg.fetch_add(1);
+      recved.fetch_add(1, std::memory_order_relaxed);
       // encoded_cache_.Put(pmsg->v_i_, pmsg->encoded_v_i_);
     };
 
@@ -466,7 +467,13 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
 
     int rc = fine_grain_bsp<vid_encoded_msg_t<VID_T>>(__send, __recv, bsp_opts);
     CHECK(0 == rc);
-    CHECK(recved_msg == cache.size() * 2) << "recved_msg count: " << recved_msg << ", cache.size()*2: " << cache.size()*2;
+    std::vector<vid_encoded_msg_t<VID_T>> tmp;
+    size_t i = 0;
+    while (encoded_msg_vec_queue.try_dequeue(tmp)) {
+      i += tmp.size();
+      LOG(INFO) << "encoded_msg_vec_queue not empty: " << tmp.size() << ", chunk_left: " << chunk_left.load();
+    }
+    CHECK(sended == recved && recved == cache.size() * 2) << "sended: " << sended << ", recved: " << recved << "i.size(): " << i << ", cache.size()*2: " << cache.size()*2;
   });
 
   watch.mark("t1");
@@ -489,6 +496,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
         size_t idx = k.fetch_add(1, std::memory_order_relaxed);
         items[idx].edata_ = edge->edata_;
         if (opts_.src_need_encode_) {
+          sended.fetch_add(1);
           // if (encoded_cache_.Cached(edge->src_)) {
           //   LOG(INFO) << "hit encoded cache";
           //   items[idx].src_ = encoded_cache_.Get(edge->src_);
@@ -503,6 +511,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
           items[idx].src_ = edge->src_;
         }
         if (opts_.dst_need_encode_) {
+          sended.fetch_add(1);
           // if (encoded_cache_.Cached(edge->dst_)) {
           //   LOG(INFO) << "hit encoded cache";
           //   items[idx].dst_ = encoded_cache_.Get(edge->dst_);
@@ -539,8 +548,9 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
         auto &vec = (*encoded_msg_vecs)[p_i];
         vec.emplace_back(std::move(encoded_msg));
         if (vec.size() >= bsp_opts.local_capacity_) {
-          encoded_msg_vec_queues[p_i].enqueue(std::vector<vid_encoded_msg_t<VID_T>>(vec));
-          vec.clear();
+          chunk_left.fetch_add(1);
+          encoded_msg_vec_queue.enqueue(std::move(vec));
+          vec.reserve(bsp_opts.local_capacity_);
         }
     };
 
@@ -555,7 +565,8 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
       for (int p_i = 0; p_i < cluster_info.partitions_; ++p_i) {
         auto &vec = (*encoded_msg_vecs)[p_i];
         if (!vec.empty()) {
-          encoded_msg_vec_queues[p_i].enqueue(std::vector<vid_encoded_msg_t<VID_T>>(vec));
+          chunk_left.fetch_add(1);
+          encoded_msg_vec_queue.enqueue(std::move(vec));
         }
       }
     };

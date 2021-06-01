@@ -7,12 +7,12 @@ ROOT_DIR=$(realpath $CUR_DIR/..)
 cd $ROOT_DIR
 
 MAIN="$ROOT_DIR/bazel-bin/example/pagerank" # process name
-WNUM=3
-WCORES=4
+WNUM=2
+WCORES=16
 
 #INPUT=${INPUT:="$ROOT_DIR/data/graph/v100_e2150_ua_c3.csv"}
-# INPUT=${INPUT:="nebula:$ROOT_DIR/scripts/nebula.conf"}
-INPUT=${INPUT:="$ROOT_DIR/data/graph/non_coding_5_7.csv"}
+INPUT=${INPUT:="nebula:$ROOT_DIR/scripts/nebula.conf"}
+#INPUT=${INPUT:="$ROOT_DIR/data/graph/non_coding_5_7.csv"}
 OUTPUT=${OUTPUT:="/tmp/pagerank"}
 IS_DIRECTED=${IS_DIRECTED:=false}
 NEED_ENCODE=${NEED_ENCODE:=true}
@@ -32,6 +32,9 @@ MPIRUN_CMD=${MPIRUN_CMD:="$ROOT_DIR/3rd/mpich/bin/mpiexec.hydra"}
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$ROOT_DIR/3rd/hadoop2/lib
 
 # output dir
+if [ -d ${OUTPUT} ]; then
+    rm -rf $OUTPUT
+fi
 mkdir -p $OUTPUT
 
 # create log dir if it doesn't exist
