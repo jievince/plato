@@ -1006,10 +1006,10 @@ int fine_grain_bsp2 (
         while (flag && (MPI_UNDEFINED != index)) {
           MPI_Get_count(&status, MPI_CHAR, &recv_bytes);
           if (0 == recv_bytes) {
-            LOG(INFO) << "[" << cluster_info.partition_id_ << "]: recved a resp fin";
+            //LOG(INFO) << "[" << cluster_info.partition_id_ << "]: recved a resp fin";
             ++finished_count;
           } else {  // call recv_task
-            LOG(INFO) << "[" << cluster_info.partition_id_ << "]: recved a resp msg";
+            //LOG(INFO) << "[" << cluster_info.partition_id_ << "]: recved a resp msg";
             char* buff = resp_buffs_vec[index].get();
             CHECK(recv_bytes >= static_cast<int>(sizeof(chunk_tail_t))) << "recv message too small: " << recv_bytes;
 
@@ -1106,10 +1106,10 @@ int fine_grain_bsp2 (
         while (flag && (MPI_UNDEFINED != index)) {
           MPI_Get_count(&status, MPI_CHAR, &recv_bytes);
           if (0 == recv_bytes) {
-            LOG(INFO) << "[" << cluster_info.partition_id_ << "]: recved a req fin";
+            //LOG(INFO) << "[" << cluster_info.partition_id_ << "]: recved a req fin";
             ++finished_count;
           } else {  // call recv_task
-            LOG(INFO) << "[" << cluster_info.partition_id_ << "]: recved a req msg";
+            //LOG(INFO) << "[" << cluster_info.partition_id_ << "]: recved a req msg";
             char* buff = buffs_vec[index].get();
             CHECK(recv_bytes >= static_cast<int>(sizeof(chunk_tail_t))) << "recv message too small: " << recv_bytes;
 
@@ -1303,7 +1303,7 @@ int fine_grain_bsp2 (
       };
 
       auto flush_local = [&](int p_i) {
-        LOG(INFO) << "send_resp: flush_local...";
+        //LOG(INFO) << "send_resp: flush_local...";
         auto& poarchive = oarchives_vec[p_i];
         auto& buflck    = buflck_vec[p_i];
         auto& blist     = global_sndbuf_vec[p_i];
@@ -1311,7 +1311,7 @@ int fine_grain_bsp2 (
         uint32_t idles = 0;
 
         buflck.lock();
-        LOG(INFO) << "send_resp: flus local, wait for avalible slots";
+        //LOG(INFO) << "send_resp: flus local, wait for avalible slots";
         while (0 == blist.size()) {  // wait for available slots
           buflck.unlock();
           if (++idles > 3) {
@@ -1322,14 +1322,14 @@ int fine_grain_bsp2 (
           }
           buflck.lock();
         }
-        LOG(INFO) << "send_resp: flus local, found avalible slots: " << blist.size();
+        //LOG(INFO) << "send_resp: flus local, found avalible slots: " << blist.size();
 
         append_chunk_tail(poarchive.get());
         auto chunk_buff = poarchive->get_intrusive_buffer();
         blist.back().write(chunk_buff.data_, chunk_buff.size_);
 
         if (blist.back().size() > opts.global_size_) {  // start a new ISend
-          LOG(INFO) << "send_resp:flus local, start a new Isend";
+          //LOG(INFO) << "send_resp:flus local, start a new Isend";
           mem_ostream_t oss(std::move(blist.back()));
           auto& reqlck  = reqlck_vec[p_i];
           auto& reqlist = flying_requests_vec[p_i];
@@ -1344,14 +1344,14 @@ int fine_grain_bsp2 (
           MPI_Isend(buff.data_, buff.size_, MPI_CHAR, p_i, Response, opts.comm_,
               &reqlist.back().first);
           reqlck.unlock();
-          LOG(INFO) << "send_resp:flus local, end a new Isend";
+          //LOG(INFO) << "send_resp:flus local, end a new Isend";
         } else {
-          LOG(INFO) << "send_resp:flus local, Do not start a new Isend";
+          //LOG(INFO) << "send_resp:flus local, Do not start a new Isend";
           buflck.unlock();
         }
 
         poarchive->reset();
-        LOG(INFO) << "send_resp: flush_local ended...";
+        //LOG(INFO) << "send_resp: flush_local ended...";
       };
 
       auto send_resp_callback = [&](int p_i, const RESP_MSG& msg) {
@@ -1517,7 +1517,7 @@ int fine_grain_bsp2 (
     LOG(INFO) << "send_req_assist_thread start working...";
     uint32_t idle_times = 0;
     while (continued.load()) {
-      LOG(INFO) << "sennd_req_assist_thread continued...";
+      //LOG(INFO) << "sennd_req_assist_thread continued...";
       bool busy = false;
       for (int p_i = 0; p_i < cluster_info.partitions_; ++p_i) {
         auto& reqlck  = reqlck_vec[p_i];

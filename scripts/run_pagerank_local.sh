@@ -7,15 +7,15 @@ ROOT_DIR=$(realpath $CUR_DIR/..)
 cd $ROOT_DIR
 
 MAIN="$ROOT_DIR/bazel-bin/example/pagerank" # process name
-WNUM=2
-WCORES=16
+WNUM=3
+WCORES=8
 
 #INPUT=${INPUT:="$ROOT_DIR/data/graph/v100_e2150_ua_c3.csv"}
 INPUT=${INPUT:="nebula:$ROOT_DIR/scripts/nebula.conf"}
 #INPUT=${INPUT:="$ROOT_DIR/data/graph/non_coding_5_7.csv"}
 #INPUT=${INPUT:="$ROOT_DIR/data/graph/raw_graph_10_9.csv"}
 OUTPUT=${OUTPUT:="/tmp/pagerank"}
-IS_DIRECTED=${IS_DIRECTED:=false}
+IS_DIRECTED=${IS_DIRECTED:=true}
 NEED_ENCODE=${NEED_ENCODE:=true}
 EPS=${EPS:=0.0001}
 DAMPING=${DAMPING:=0.85}
