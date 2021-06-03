@@ -55,9 +55,7 @@ enum MessageTag {
   Shuffle     = 2,
   ShuffleFin  = 3,
   Request     = 4,
-  Response    = 5,
-  Decode_Request = 6,
-  Decode_Response = 7
+  Response    = 5
 };
 
 template <typename T>

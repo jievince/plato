@@ -318,9 +318,7 @@ void load_edges_cache_with_encoder(
   }
   LOG(INFO) << "[" << cluster_info.partition_id_ << "]: read edges cache cost: " << watch.show("t1") / 1000.0 << "s";
 
-  watch.mark("t1");
   vid_encoder->encode(*pcache, callback);
-  LOG(INFO) << "[" << cluster_info.partition_id_ << "]: vid encode cost: " << watch.show("t1") / 1000.0 << "s";
   LOG(INFO) << "[" << cluster_info.partition_id_ << "]: load edges cache with encoder total cost: " << watch.show("t0") / 1000.0 << "s";
 }
 

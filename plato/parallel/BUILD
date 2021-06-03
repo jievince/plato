@@ -50,6 +50,7 @@ cc_library (
         "//plato/util:archive",
         "//plato/util:spinlock",
         "//plato/util:concurrentqueue",
+        "//plato/util:perf",
 
         ":mpi"
     ],

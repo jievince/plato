@@ -10,8 +10,8 @@ MAIN="$ROOT_DIR/bazel-bin/example/pagerank" # process name
 WNUM=3
 WCORES=8
 
-#INPUT=${INPUT:="$ROOT_DIR/data/graph/v100_e2150_ua_c3.csv"}
-INPUT=${INPUT:="nebula:$ROOT_DIR/scripts/nebula.conf"}
+INPUT=${INPUT:="$ROOT_DIR/data/graph/v100_e2150_ua_c3.csv"}
+#INPUT=${INPUT:="nebula:$ROOT_DIR/scripts/nebula.conf"}
 #INPUT=${INPUT:="$ROOT_DIR/data/graph/non_coding_5_7.csv"}
 #INPUT=${INPUT:="$ROOT_DIR/data/graph/raw_graph_10_9.csv"}
 OUTPUT=${OUTPUT:="/tmp/pagerank"}

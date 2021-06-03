@@ -53,6 +53,7 @@
 #include "plato/util/archive.hpp"
 #include "plato/util/spinlock.hpp"
 #include "plato/util/concurrentqueue.h"
+#include "plato/util/perf.hpp"
 #include "plato/parallel/mpi.hpp"
 
 namespace plato {
@@ -970,6 +971,9 @@ int fine_grain_bsp2 (
   using iarchive_req_spec_t = iarchive_t<REQ_MSG, mem_istream_t>;
   using iarchive_resp_spec_t = iarchive_t<RESP_MSG, mem_istream_t>;
 
+  stop_watch_t watch;
+  watch.mark("t0");
+
   auto& cluster_info = cluster_info_t::get_instance();
   if (opts.threads_ <= 0) { opts.threads_ = cluster_info.threads_; }
   if (opts.flying_recv_ <= 0) { opts.flying_recv_ = cluster_info.partitions_; }
@@ -1717,6 +1721,8 @@ int fine_grain_bsp2 (
   LOG(INFO) << "mark 25";
   recv_resp_thread.join();
   LOG(INFO) << "mark 26";
+  watch.show("t0");
+  LOG(INFO) << "[" << cluster_info.partition_id_ << "]: fine_graph_bsp2(start after barrier, end before barrier)cost: " << watch.show("t0") / 1000.0 << "s";
   MPI_Barrier(opts.comm_);
   LOG(INFO) << "mark 99";
 #ifdef __BSP_DEBUG__
