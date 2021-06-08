@@ -22,6 +22,7 @@
 #pragma once
 
 #include <vector>
+#include <type_traits>
 
 #include "plato/graph/base.hpp"
 #include "plato/graph/structure/vid_encoder_base.hpp"
@@ -45,10 +46,6 @@ struct vid_to_encode_msg_t {
   void serialize(Ar &ar) {
     ar & v_i_ & idx_ & is_src_;
   }
-
-  static inline int size() {
-    return sizeof(VID_T) + sizeof(size_t) + sizeof(bool);
-  }
 };
 
 template <typename VID_T>
@@ -62,11 +59,17 @@ struct vid_encoded_msg_t {
   void serialize(Ar &ar) {
     ar & v_i_ & encoded_v_i_ & idx_ & is_src_;
   }
-
-  static inline int size() {
-    return sizeof(VID_T) + sizeof(vid_t) + sizeof(size_t) + sizeof(bool);
-  }
 };
+
+template<typename VID_T>
+inline typename std::enable_if<std::is_integral<VID_T>::value, size_t> SIZE(VID_T) { // could it marked as inline?
+  return sizeof(VID_T);
+}
+
+template<typename VID_T>
+inline typename std::enable_if<!std::is_integral<VID_T>::value, size_t> SIZE(VID_T vid) {
+  return vid.size();
+}
 
 template <typename EDATA, typename VID_T = vid_t, template<typename, typename> class CACHE = edge_block_cache_t>
 class distributed_vid_encoder_t : public vid_encoder_base_t<EDATA, VID_T, CACHE>{
@@ -86,7 +89,9 @@ public:
   ~distributed_vid_encoder_t() {
     MPI_Barrier(MPI_COMM_WORLD);
     continue_serve_ = false;
-    decoder_server_.join();
+    if (decoder_server_.joinable()) {
+      decoder_server_.join();
+    }
   }
 
   /**

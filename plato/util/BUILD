@@ -493,3 +493,49 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "configs",
+    hdrs = [
+        "configs.hpp",
+    ],
+    srcs = [ ],
+    copts = [
+        "-O2",
+        "-Wall",
+        "-std=c++11",
+    ],
+    includes = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//3rd/glog:glog",
+        "//3rd/boost:boost_include",
+    ],
+)
+
+cc_library(
+    name = "nebula_writer",
+    hdrs = [
+        "nebula_writer.h",
+    ],
+    srcs = [ ],
+    copts = [
+        "-fopenmp",
+        "-O2",
+        "-Wall",
+        "-std=c++11",
+    ],
+    includes = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//3rd/glog:glog",
+        "//3rd/boost:boost_include",
+        "//3rd/boost:boost_iostreams",
+        "//3rd/boost:boost_filesystem",
+        "//3rd/nebula-cpp:nebula_graph_client-dynamic",
+
+        "//plato/graph:base",
+
+        ":configs",
+        ":thread_local_object",
+    ],
+)

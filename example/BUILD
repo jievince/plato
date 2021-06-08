@@ -68,6 +68,7 @@ cc_binary (
 
         "//plato/util:perf",
         "//plato/util:atomic",
+        "//plato/util:nebula_writer",
         "//plato/graph:base",
         "//plato/graph:state",
         "//plato/graph:structure",

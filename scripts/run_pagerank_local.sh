@@ -10,11 +10,11 @@ MAIN="$ROOT_DIR/bazel-bin/example/pagerank" # process name
 WNUM=3
 WCORES=8
 
-INPUT=${INPUT:="$ROOT_DIR/data/graph/v100_e2150_ua_c3.csv"}
-#INPUT=${INPUT:="nebula:$ROOT_DIR/scripts/nebula.conf"}
+#INPUT=${INPUT:="$ROOT_DIR/data/graph/v100_e2150_ua_c3.csv"}
+INPUT=${INPUT:="nebula:$ROOT_DIR/scripts/nebula.conf"}
 #INPUT=${INPUT:="$ROOT_DIR/data/graph/non_coding_5_7.csv"}
 #INPUT=${INPUT:="$ROOT_DIR/data/graph/raw_graph_10_9.csv"}
-OUTPUT=${OUTPUT:="/tmp/pagerank"}
+OUTPUT=${INPUT:="nebula:$ROOT_DIR/scripts/nebula.conf"}
 IS_DIRECTED=${IS_DIRECTED:=true}
 NEED_ENCODE=${NEED_ENCODE:=true}
 EPS=${EPS:=0.0001}
@@ -36,7 +36,7 @@ export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$ROOT_DIR/3rd/hadoop2/lib
 if [ -d ${OUTPUT} ]; then
     rm -rf $OUTPUT
 fi
-mkdir -p $OUTPUT
+#mkdir -p $OUTPUT
 
 # create log dir if it doesn't exist
 LOG_DIR=$ROOT_DIR/logs

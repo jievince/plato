@@ -31,10 +31,12 @@
 #include "boost/iostreams/stream.hpp"
 #include "boost/iostreams/filter/gzip.hpp"
 #include "boost/iostreams/filtering_stream.hpp"
+#include "nebula/client/Init.h"
 
 #include "plato/util/perf.hpp"
 #include "plato/util/hdfs.hpp"
 #include "plato/util/atomic.hpp"
+#include "plato/util/nebula_writer.h"
 #include "plato/graph/base.hpp"
 #include "plato/graph/state.hpp"
 #include "plato/graph/structure.hpp"
@@ -70,6 +72,7 @@ int main(int argc, char** argv) {
   plato::stop_watch_t watch;
   auto& cluster_info = plato::cluster_info_t::get_instance();
 
+  //nebula::init(&argc, &argv);
   init(argc, argv);
   cluster_info.initialize(&argc, &argv);
 
@@ -198,18 +201,40 @@ int main(int argc, char** argv) {
 
   watch.mark("t1");
   {  // save result to hdfs
-    plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
-    curt_rank->foreach<int> (
-      [&](plato::vid_t v_i, double* pval) {
-        auto& fs_output = os.local();
-        if (encoder_ptr != nullptr) {
-          fs_output << encoder_ptr->decode(v_i) << "," << *pval << "\n";
-        } else {
-          fs_output << v_i << "," << *pval << "\n";
+    if (!boost::starts_with(FLAGS_output, "nebula:")) {
+      plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
+      curt_rank->foreach<int> (
+        [&](plato::vid_t v_i, double* pval) {
+          auto& fs_output = os.local();
+          if (encoder_ptr != nullptr) {
+            fs_output << encoder_ptr->decode(v_i) << "," << *pval << "\n";
+          } else {
+            fs_output << v_i << "," << *pval << "\n";
+          }
+          return 0;
         }
-        return 0;
-      }
-    );
+      );
+    } else {
+      struct Item {
+        plato::vid_t a;
+        double b;
+        std::string toString() {
+          return std::to_string(a) + std::to_string(b);
+        }
+      };
+      plato::thread_local_nebula_writer writer(FLAGS_output);
+      curt_rank->foreach<int> (
+        [&](plato::vid_t v_i, double* pval) {
+          auto& nebula_writer = writer.local<Item>();
+          if (encoder_ptr != nullptr) {
+            nebula_writer.add(Item{encoder_ptr->decode(v_i), *pval});
+          } else {
+            nebula_writer.add(Item{v_i, *pval});
+          }
+          return 0;
+        }
+      );
+    }
   }
   if (0 == cluster_info.partition_id_) {
     LOG(INFO) << "save result cost: " << watch.show("t1") / 1000.0 << "s";
