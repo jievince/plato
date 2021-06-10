@@ -50,6 +50,7 @@
 #include "plato/util/perf.hpp"
 #include "plato/util/bitmap.hpp"
 #include "plato/util/mmap_alloc.hpp"
+#include "plato/util/configs.hpp"
 #include "plato/parallel/mpi.hpp"
 #include "plato/parallel/bsp.hpp"
 #include "plato/graph/base.hpp"
@@ -135,77 +136,6 @@ void read_from_files(
 
 }
 
-class NebulaConfig {
-public:
-  explicit NebulaConfig(const std::string &path) { loadConfigs(path); }
-
-  const std::vector<nebula::MetaHostAddr> &getMetaServers() const { return metaServers_; }
-
-  const std::string &getSpaceName() const { return spaceName_; }
-
-  const std::string &getEdgeName() const { return edgeName_; }
-
-  const std::string &getEdgeDataField() const { return edgeDataField_; }
-
-private:
-  void loadConfigs(const std::string &path) {
-    std::ifstream fin(path.c_str());
-    if (!fin) {
-      LOG(ERROR) << "open nebula config file " << path << " failed";
-    }
-
-    std::string line, key, val;
-    int posEqual;
-    while (fin.good() && (false == fin.eof())) {
-      std::getline(fin, line);
-      if (boost::starts_with(line, "--")) {
-        posEqual = line.find('=');
-        key = trim(line.substr(2, posEqual-2));
-        val = trim(line.substr(posEqual + 1));
-        if (key == "meta_server_addrs") {
-          std::vector<std::string> metas;
-          boost::split(metas, val, boost::is_any_of(","),
-                       boost::token_compress_on);
-          for (auto &meta : metas) {
-            std::vector<std::string> ip_port;
-            boost::split(ip_port, meta, boost::is_any_of(":"),
-                         boost::token_compress_on);
-            CHECK(ip_port.size() == 2);
-            metaServers_.emplace_back(ip_port[0], std::stoi(ip_port[1]));
-          }
-        } else if (key == "space_name") {
-          spaceName_ = val;
-        } else if (key == "edge_name") {
-          edgeName_ = val;
-        } else if (key == "edge_data_field") {
-          edgeDataField_ = val;
-        } else {
-          LOG(WARNING) << "Unknown nebula config item: " << key;
-        }
-      }
-    }
-  }
-
-  std::string trim(std::string const &source, char const *delims = " \t\r\n") {
-    std::string result(source);
-    std::string::size_type index = result.find_last_not_of(delims);
-    if (index != std::string::npos)
-      result.erase(++index);
-
-    index = result.find_first_not_of(delims);
-    if (index != std::string::npos)
-      result.erase(0, index);
-    else
-      result.erase();
-    return result;
-  }
-
-  std::vector<nebula::MetaHostAddr> metaServers_;
-  std::string spaceName_;
-  std::string edgeName_;
-  std::string edgeDataField_;
-};
-
 /*
  * parallel parse edges from file system to cache
  *
@@ -230,29 +160,29 @@ void read_from_nebula(
   auto& cluster_info = cluster_info_t::get_instance();
   nebula_scanner_t<EDATA, VID_T>  scanner = nebula_scanner<EDATA, VID_T>;
 
-  std::string pathPrefix = "nebula:";
-  CHECK(boost::istarts_with(path, pathPrefix)) << "invalid nebula config path: " << path;
-  auto configpath = path.substr(pathPrefix.size());
-  NebulaConfig config(configpath);
-  std::vector<nebula::MetaHostAddr> metaServers = config.getMetaServers();
+  Configs configs(path, "nebula:");
+  std::string meta_server_addrs, space, edge, edge_data_field;
+  CHECK((meta_server_addrs = configs.get("meta_server_addrs")) != "") << "meta_server_addrs_val doesn't exist.";
+  CHECK((space = configs.get("space")) != "") << "space doesn't exist";
+  CHECK((edge = configs.get("edge")) != "") << "edge doesn't exist.";
+  edge_data_field = configs.get("edge_data_field");
+
+  std::vector<std::string> metaServers;
+  boost::split(metaServers, meta_server_addrs, boost::is_any_of(","),
+                boost::token_compress_on);
+
   LOG(INFO) << "jie, metaServers.size()=" << metaServers.size();
   for (auto& meta : metaServers) {
     LOG(INFO) << "jie: " << meta;
   }
-  std::string spaceName = config.getSpaceName();
-  LOG(INFO) << "jie, spaceName: " << spaceName;
-  std::string edgeName = config.getEdgeName();
-  LOG(INFO) << "jie, edgeName: " << edgeName;
-  std::string edgeDataField = config.getEdgeDataField();
-  LOG(INFO) << "jie, edgeData: " << edgeDataField;
 
   nebula::StorageClient client(metaServers);
 
-  std::vector<int> parts = get_nebula_parts(client, spaceName);
+  std::vector<int> parts = get_nebula_parts(client, space);
 
-  auto vidType = client.getSpaceVidType(spaceName);
+  auto vidType = client.getSpaceVidType(space);
   if (vidType == nebula::VidType::UNKNOWN) {
-    LOG(ERROR) << "Unkwown vid type of space " << spaceName << " in nebula";
+    LOG(ERROR) << "Unkwown vid type of space " << space << " in nebula";
   }
 
   std::mutex parts_lock;
@@ -268,7 +198,7 @@ void read_from_nebula(
         parts.pop_back();
       }
 
-      scanner(client, spaceName, partID, edgeName, edgeDataField, callback, decoder);
+      scanner(client, space, partID, edge, edge_data_field, callback, decoder);
     }
   }
 

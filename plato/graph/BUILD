@@ -79,6 +79,7 @@ cc_library (
         "//plato/util:perf",
         "//plato/util:bitmap",
         "//plato/util:spinlock",
+        "//plato/util:configs",
         "//plato/util:mmap_alloc",
         "//plato/parallel:mpi",
         "//plato/parallel:bsp",

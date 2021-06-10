@@ -86,8 +86,11 @@ struct buffer {
   }
 
   std::string genStmt() {
+    if (items_.empty()) {
+      return "";
+    }
+
     std::string stmt(prefix_);
-    LOG(INFO) << "genstmt: " << stmt;
     for (auto &item : items_) {
       stmt += item.toString();
       stmt += ',';
@@ -115,25 +118,24 @@ public:
   }
 
   thread_local_nebula_writer(const std::string& path) {
-    CHECK(boost::starts_with(path, "nebula:")) << "it's not a nebula config file";
     Configs configs(path, "nebula:");
-    std::string graph_server_addrs_val, user_val, password_val, mode_val, space_val, tag_val, props_val;
-    CHECK((graph_server_addrs_val = configs.get("graph_server_addrs")) != "") << "graph_server_addrs doesn't exist.";
-    CHECK((user_val = configs.get("user")) != "") << "user doesn't exist.";
-    CHECK((password_val = configs.get("password")) != "") << "password doesn't exist.";
-    CHECK((mode_val = configs.get("mode")) != "") << "props doesn't exist.";
-    CHECK((space_val = configs.get("space")) != "") << "space doesn't exist";
-    CHECK((tag_val = configs.get("tag")) != "") << "tag doesn't exist.";
-    CHECK((props_val = configs.get("props")) != "") << "props doesn't exist.";
+    std::string graph_server_addrs, user, password, mode, space, tag, props;
+    CHECK((graph_server_addrs = configs.get("graph_server_addrs")) != "") << "graph_server_addrs doesn't exist.";
+    CHECK((user = configs.get("user")) != "") << "user doesn't exist.";
+    CHECK((password = configs.get("password")) != "") << "password doesn't exist.";
+    CHECK((mode = configs.get("mode")) != "") << "props doesn't exist.";
+    CHECK((space = configs.get("space")) != "") << "space doesn't exist";
+    CHECK((tag = configs.get("tag")) != "") << "tag doesn't exist.";
+    CHECK((props = configs.get("props")) != "") << "props doesn't exist.";
   
     std::vector<std::string> graphServers;
-    boost::split(graphServers, graph_server_addrs_val, boost::is_any_of(","), boost::token_compress_on);
+    boost::split(graphServers, graph_server_addrs, boost::is_any_of(","), boost::token_compress_on);
 
-    std::vector<std::string> props;
-    boost::split(props, props_val, boost::is_any_of(","), boost::token_compress_on);
+    std::vector<std::string> tagProps;
+    boost::split(tagProps, props, boost::is_any_of(","), boost::token_compress_on);
 
     //if (mode == Mode::INSERT) {
-    genInsertStmtPrefix(tag_val, props);
+    genInsertStmtPrefix(tag, tagProps);
     //}
 
     auto& cluster_info = cluster_info_t::get_instance();
@@ -143,12 +145,12 @@ public:
     poolConfig.maxConnectionPoolSize_ = cluster_info.threads_;
     pool_->init(graphServers, poolConfig);
 
-    std::function<void*()> construction([this, user_val, password_val, space_val] {
-      nebula::Session *session = new nebula::Session(this->pool_->getSession(user_val, password_val));
+    std::function<void*()> construction([this, user, password, space] {
+      nebula::Session *session = new nebula::Session(this->pool_->getSession(user, password));
       CHECK(session) << "session is nullptr";
       CHECK(session->valid()) << "session is not valid";
       CHECK(session->ping()) << "session ping failed";
-      session->execute("USE " + space_val);
+      session->execute("USE " + space);
 
       auto *buff_ = new buffer<ITEM>(1000, session, this->stmtPrefix_);
 

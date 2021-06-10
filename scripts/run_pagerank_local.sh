@@ -17,7 +17,7 @@ INPUT=${INPUT:="nebula:$PROJECT/scripts/nebula.conf"}
 OUTPUT=${OUTPUT:="nebula:$PROJECT/scripts/nebula.conf"}
 #OUTPUT=${OUTPUT:="/tmp/pagerank"}
 IS_DIRECTED=${IS_DIRECTED:=true}
-NEED_ENCODE=${NEED_ENCODE:=false}
+NEED_ENCODE=${NEED_ENCODE:=true}
 EPS=${EPS:=0.0001}
 DAMPING=${DAMPING:=0.85}
 ITERATIONS=${ITERATIONS:=100}

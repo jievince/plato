@@ -36,7 +36,7 @@ namespace plato {
 
 struct Configs {
   Configs(const std::string &path, const std::string &pathPrefix = "") {
-    CHECK(path.size() > pathPrefix.size());
+    CHECK(boost::istarts_with(path, pathPrefix)) << "config path doesn't starts with pathPrefix, path: " << path << ", pathPrefix: " << pathPrefix;
     const std::string& realPath = path.substr(pathPrefix.size());
     std::ifstream fin(realPath.c_str());
     if (!fin.good()) {
