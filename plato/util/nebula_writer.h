@@ -75,14 +75,11 @@ struct Buffer {
 
   ~Buffer() {
     delete session_;
-    CHECK(!session_->valid()) << "release nebula session failed";
     session_ = nullptr;
-
     CHECK(items_.empty()) << "items_ is not empty when destroying Buffer";
   }
 
   void add(const ITEM &item) {
-    LOG(INFO) << "Buffer added an item: " << item.toString();
     items_.emplace_back(item);
     if (items_.size() > capacity_) {
       flush_();
