@@ -32,6 +32,8 @@
 #include "boost/iostreams/filter/gzip.hpp"
 #include "boost/iostreams/filtering_stream.hpp"
 #include "nebula/client/Init.h"
+#include "nebula/client/Config.h"
+#include "nebula/client/ConnectionPool.h"
 
 #include "plato/util/perf.hpp"
 #include "plato/util/hdfs.hpp"
@@ -218,18 +220,18 @@ int main(int argc, char** argv) {
       struct Item {
         plato::vid_t a;
         double b;
-        std::string toString() {
-          return std::to_string(a) + std::to_string(b);
+        std::string toString() const {
+          return std::to_string(a) + ":(" + std::to_string(b) + ")";
         }
       };
-      plato::thread_local_nebula_writer writer(FLAGS_output);
+      plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
       curt_rank->foreach<int> (
         [&](plato::vid_t v_i, double* pval) {
-          auto& nebula_writer = writer.local<Item>();
+          auto& buffer = writer.local();
           if (encoder_ptr != nullptr) {
-            nebula_writer.add(Item{encoder_ptr->decode(v_i), *pval});
+            buffer.add(Item{encoder_ptr->decode(v_i), *pval});
           } else {
-            nebula_writer.add(Item{v_i, *pval});
+            buffer.add(Item{v_i, *pval});
           }
           return 0;
         }

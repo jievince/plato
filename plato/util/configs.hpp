@@ -44,7 +44,7 @@ struct Configs {
     }
 
     std::string line, key, val;
-    int posEqual;
+    size_t posEqual;
     LOG(INFO) << "Configs: " << realPath;
     while (fin.good() && (false == fin.eof())) {
       std::getline(fin, line);

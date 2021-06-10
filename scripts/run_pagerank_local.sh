@@ -14,9 +14,10 @@ WCORES=8
 INPUT=${INPUT:="nebula:$ROOT_DIR/scripts/nebula.conf"}
 #INPUT=${INPUT:="$ROOT_DIR/data/graph/non_coding_5_7.csv"}
 #INPUT=${INPUT:="$ROOT_DIR/data/graph/raw_graph_10_9.csv"}
-OUTPUT=${INPUT:="nebula:$ROOT_DIR/scripts/nebula.conf"}
+OUTPUT=${OUTPUT:="nebula:$ROOT_DIR/scripts/nebula.conf"}
+#OUTPUT=${OUTPUT:="/tmp/pagerank"}
 IS_DIRECTED=${IS_DIRECTED:=true}
-NEED_ENCODE=${NEED_ENCODE:=true}
+NEED_ENCODE=${NEED_ENCODE:=false}
 EPS=${EPS:=0.0001}
 DAMPING=${DAMPING:=0.85}
 ITERATIONS=${ITERATIONS:=100}
@@ -33,10 +34,13 @@ MPIRUN_CMD=${MPIRUN_CMD:="$ROOT_DIR/3rd/mpich/bin/mpiexec.hydra"}
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$ROOT_DIR/3rd/hadoop2/lib
 
 # output dir
-if [ -d ${OUTPUT} ]; then
-    rm -rf $OUTPUT
+if  [[ $OUTPUT != nebula:* ]] ;
+then
+    if [ -d ${OUTPUT} ]; then
+        rm -rf $OUTPUT
+    fi
+    mkdir -p $OUTPUT
 fi
-#mkdir -p $OUTPUT
 
 # create log dir if it doesn't exist
 LOG_DIR=$ROOT_DIR/logs
@@ -49,4 +53,7 @@ mkdir -p ${LOG_DIR}
 ${MPIRUN_CMD} -n ${WNUM} ${MAIN} ${PARAMS} --log_dir=$LOG_DIR
 
 echo ">>>>>>>>>>>output>>>>>>>>>>>>>>"
-ls -lh $OUTPUT
+if  [[ $OUTPUT != nebula:* ]] ;
+then
+    ls -lh $OUTPUT
+fi
