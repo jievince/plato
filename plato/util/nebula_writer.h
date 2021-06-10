@@ -58,7 +58,6 @@ struct Buffer {
     flush_ = [&]() {
       LOG(INFO) << "flush_...";
       auto stmt = genStmt();
-      LOG(INFO) << "stmt: " << stmt;
       CHECK(session_->valid()) << "session_ not valid";
       CHECK(session_->ping()) << "session ping failed";
       auto result = session_->execute(stmt);
