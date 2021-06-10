@@ -24,12 +24,12 @@
 
 #include <cstdint>
 #include <cstdlib>
-#include <string>
 #include <memory>
+#include <string>
 
 #include "glog/logging.h"
-#include "boost/format.hpp"
 #include "boost/algorithm/string.hpp"
+#include "boost/format.hpp"
 #include "nebula/client/Config.h"
 #include "nebula/client/ConnectionPool.h"
 #include "nebula/client/Init.h"
@@ -40,26 +40,32 @@
 
 namespace plato {
 
-
-template<typename ITEM>
-struct buffer {
+template <typename ITEM>
+struct Buffer {
   size_t capacity_;
-  nebula::Session* session_;
-  std::string prefix_;
+  nebula::Session *session_;
+  std::string mode_;
+  std::string tag_;
+  std::vector<std::string> props_;
   std::function<nebula::ErrorCode()> flush_;
   std::vector<ITEM> items_;
 
-  buffer(size_t capacity, nebula::Session* session, const std::string& prefix) : capacity_(capacity), session_(session), prefix_(prefix) {
-    LOG(INFO) << "buffer(), prefix_: " << prefix_;
+  Buffer(size_t capacity, nebula::Session *session, const std::string &mode,
+         const std::string &tag, const std::vector<std::string> &props)
+      : capacity_(capacity), session_(session), mode_(mode), tag_(tag),
+        props_(props) {
     items_.reserve(capacity);
     flush_ = [&]() {
+      LOG(INFO) << "flush_...";
       auto stmt = genStmt();
       LOG(INFO) << "stmt: " << stmt;
       CHECK(session_->valid()) << "session_ not valid";
       CHECK(session_->ping()) << "session ping failed";
       auto result = session_->execute(stmt);
       if (result.errorCode != nebula::ErrorCode::SUCCEEDED) {
-          LOG(INFO) << "session execute failed, statment: " << stmt << "\nerrorCode: " << static_cast<int>(result.errorCode) << ", errorMsg: " << *result.errorMsg;
+        LOG(INFO) << "session execute failed, statment: " << stmt
+                  << "\nerrorCode: " << static_cast<int>(result.errorCode)
+                  << ", errorMsg: " << *result.errorMsg;
       }
       // flush succeeded
       items_.clear();
@@ -67,19 +73,18 @@ struct buffer {
     };
   }
 
-  ~buffer() {
+  ~Buffer() {
     delete session_;
     CHECK(!session_->valid()) << "release nebula session failed";
     session_ = nullptr;
 
-    CHECK(items_.empty()) << "items_ is not empty when destroying buffer";
+    CHECK(items_.empty()) << "items_ is not empty when destroying Buffer";
   }
 
-  void add(const ITEM& item) {
+  void add(const ITEM &item) {
     LOG(INFO) << "Buffer added an item: " << item.toString();
     items_.emplace_back(item);
     if (items_.size() > capacity_) {
-      LOG(INFO) << "write batch...";
       flush_();
       items_.clear();
     }
@@ -90,14 +95,45 @@ struct buffer {
       return "";
     }
 
-    std::string stmt(prefix_);
-    for (auto &item : items_) {
-      stmt += item.toString();
-      stmt += ',';
-    }
-    stmt.back() = ';';
+    if (boost::iequals(mode_, "insert")) {
+      std::string stmt = "INSERT VERTEX " + tag_ + "(";
+      for (auto &prop : props_) {
+        stmt += prop;
+        stmt += ",";
+      }
+      stmt.back() = ')';
+      stmt += " VALUES ";
 
-    return stmt;
+      for (auto &item : items_) {
+        stmt += std::to_string(item.vid);
+        stmt += ":(";
+        stmt += item.toString();
+        stmt += "),";
+      }
+      stmt.back() = ';';
+
+      return stmt;
+    } else if (boost::iequals(mode_, "update")) {
+      std::string stmt;
+      for (auto &item : items_) {
+        stmt += "UPDATE VERTEX ON " + tag_ + " ";
+        stmt += std::to_string(item.vid);
+        stmt += " SET ";
+        for (auto &prop: props_) {
+          stmt += prop;
+          stmt += " = ";
+          stmt += item.toString();
+          stmt += ",";
+        }
+        stmt.back() = ';';
+      }
+
+      return stmt;
+    } else {
+      LOG(FATAL) << "invalid mode: " << mode_;
+    }
+
+    return "";
   };
 };
 
@@ -117,48 +153,50 @@ public:
     return *this;
   }
 
-  thread_local_nebula_writer(const std::string& path) {
+  thread_local_nebula_writer(const std::string &path) {
     Configs configs(path, "nebula:");
     std::string graph_server_addrs, user, password, mode, space, tag, props;
-    CHECK((graph_server_addrs = configs.get("graph_server_addrs")) != "") << "graph_server_addrs doesn't exist.";
+    CHECK((graph_server_addrs = configs.get("graph_server_addrs")) != "")
+        << "graph_server_addrs doesn't exist.";
     CHECK((user = configs.get("user")) != "") << "user doesn't exist.";
-    CHECK((password = configs.get("password")) != "") << "password doesn't exist.";
-    CHECK((mode = configs.get("mode")) != "") << "props doesn't exist.";
+    CHECK((password = configs.get("password")) != "")
+        << "password doesn't exist.";
     CHECK((space = configs.get("space")) != "") << "space doesn't exist";
+    CHECK((mode = configs.get("mode")) != "") << "props doesn't exist.";
     CHECK((tag = configs.get("tag")) != "") << "tag doesn't exist.";
     CHECK((props = configs.get("props")) != "") << "props doesn't exist.";
-  
+
     std::vector<std::string> graphServers;
-    boost::split(graphServers, graph_server_addrs, boost::is_any_of(","), boost::token_compress_on);
+    boost::split(graphServers, graph_server_addrs, boost::is_any_of(","),
+                 boost::token_compress_on);
 
     std::vector<std::string> tagProps;
-    boost::split(tagProps, props, boost::is_any_of(","), boost::token_compress_on);
+    boost::split(tagProps, props, boost::is_any_of(","),
+                 boost::token_compress_on);
 
-    //if (mode == Mode::INSERT) {
-    genInsertStmtPrefix(tag, tagProps);
-    //}
-
-    auto& cluster_info = cluster_info_t::get_instance();
+    auto &cluster_info = cluster_info_t::get_instance();
 
     pool_ = new nebula::ConnectionPool();
     nebula::Config poolConfig;
     poolConfig.maxConnectionPoolSize_ = cluster_info.threads_;
     pool_->init(graphServers, poolConfig);
 
-    std::function<void*()> construction([this, user, password, space] {
-      nebula::Session *session = new nebula::Session(this->pool_->getSession(user, password));
-      CHECK(session) << "session is nullptr";
-      CHECK(session->valid()) << "session is not valid";
-      CHECK(session->ping()) << "session ping failed";
-      session->execute("USE " + space);
+    std::function<void *()> construction(
+        [this, user, password, space, mode, tag, tagProps] {
+          nebula::Session *session =
+              new nebula::Session(this->pool_->getSession(user, password));
+          CHECK(session) << "session is nullptr";
+          CHECK(session->valid()) << "session is not valid";
+          CHECK(session->ping()) << "session ping failed";
+          session->execute("USE " + space);
 
-      auto *buff_ = new buffer<ITEM>(1000, session, this->stmtPrefix_);
+          auto *buff_ = new Buffer<ITEM>(1000, session, mode, tag, tagProps);
 
-      return (void*)buff_;
-    });
+          return (void *)buff_;
+        });
 
-    std::function<void(void *)> destruction([] (void* p) {
-      auto *buff_ = (buffer<ITEM>*)p;
+    std::function<void(void *)> destruction([](void *p) {
+      auto *buff_ = (Buffer<ITEM> *)p;
       if (!buff_->items_.empty()) {
         LOG(INFO) << "flush buff_...";
         buff_->flush_();
@@ -187,37 +225,16 @@ public:
   void foreach(std::function<void(const std::string& filename, boost::iostreams::filtering_ostream& os)> reducer) {};
 
   [[gnu::always_inline]] [[gnu::hot]]
-  buffer<ITEM>& local() {
-    return *((buffer<ITEM>*)thread_local_object_detail::get_local_object(id_));
-  }
-
-private:
-  void genInsertStmtPrefix(const std::string& tag, const std::vector<std::string>& props) {
-    stmtPrefix_ = "INSERT VERTEX " + tag + "(";
-    for (auto &prop : props) {
-      stmtPrefix_ += prop;
-      stmtPrefix_ += ",";
-    }
-    stmtPrefix_.back() = ')';
-    stmtPrefix_ += " VALUES ";
-    LOG(INFO) << "stmtPrefix_: " << stmtPrefix_;
+  Buffer<ITEM> &local() {
+    return *((Buffer<ITEM> *)thread_local_object_detail::get_local_object(id_));
   }
 
 protected:
-
-  enum class Mode {
-    INSERT,
-    UPDATE
-  };
-
   int id_;
 
   nebula::ConnectionPool *pool_;
-
-  std::string stmtPrefix_;
 };
 
-}  // namespace plato
+} // namespace plato
 
 #endif
-

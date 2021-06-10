@@ -218,10 +218,10 @@ int main(int argc, char** argv) {
       );
     } else {
       struct Item {
-        plato::vid_t a;
-        double b;
+        plato::vid_t vid;
+        double pr;
         std::string toString() const {
-          return std::to_string(a) + ":(" + std::to_string(b) + ")";
+          return std::to_string(pr);
         }
       };
       plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
