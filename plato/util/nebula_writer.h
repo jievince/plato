@@ -40,6 +40,15 @@
 
 namespace plato {
 
+#define CHECK_RESPONSE(resp, stmt)                                             \
+  {                                                                            \
+    if (resp.errorCode != nebula::ErrorCode::SUCCEEDED) {                      \
+      LOG(FATAL) << "session execute failed, statment: " << stmt               \
+                 << "\nerrorCode: " << static_cast<int>(resp.errorCode)        \
+                 << ", errorMsg: " << *resp.errorMsg;                          \
+    }                                                                          \
+  }
+
 template <typename ITEM>
 struct Buffer {
   size_t capacity_;
@@ -61,11 +70,7 @@ struct Buffer {
       CHECK(session_->valid()) << "session_ not valid";
       CHECK(session_->ping()) << "session ping failed";
       auto result = session_->execute(stmt);
-      if (result.errorCode != nebula::ErrorCode::SUCCEEDED) {
-        LOG(INFO) << "session execute failed, statment: " << stmt
-                  << "\nerrorCode: " << static_cast<int>(result.errorCode)
-                  << ", errorMsg: " << *result.errorMsg;
-      }
+      CHECK_RESPONSE(result, stmt);
       // flush succeeded
       items_.clear();
       return result.errorCode;
@@ -184,7 +189,16 @@ public:
           CHECK(session) << "session is nullptr";
           CHECK(session->valid()) << "session is not valid";
           CHECK(session->ping()) << "session ping failed";
-          session->execute("USE " + space);
+          std::string stmt;
+          nebula::ExecutionResponse result;
+
+          stmt = "USE " + space;
+          result = session->execute(stmt);
+          CHECK_RESPONSE(result, stmt);
+
+          stmt = "DESC TAG " + tag;
+          result = session->execute(stmt);
+          CHECK_RESPONSE(result, stmt);
 
           auto *buff_ = new Buffer<ITEM>(1000, session, mode, tag, tagProps);
 
