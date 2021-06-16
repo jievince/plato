@@ -36,6 +36,7 @@
 
 #include "plato/util/perf.hpp"
 #include "plato/util/hdfs.hpp"
+#include "plato/util/nebula_writer.h"
 #include "plato/graph/base.hpp"
 #include "plato/graph/state.hpp"
 #include "plato/graph/structure.hpp"

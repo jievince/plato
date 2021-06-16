@@ -30,6 +30,7 @@
 #include "boost/iostreams/filter/gzip.hpp"
 #include "boost/iostreams/filtering_stream.hpp"
 
+#include "plato/util/nebula_writer.h"
 #include "plato/graph/graph.hpp"
 #include "plato/algo/cnc/closeness.hpp"
 

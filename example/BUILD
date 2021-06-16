@@ -94,6 +94,7 @@ cc_binary (
         "//3rd/boost:boost_include",
         "//3rd/boost:boost_iostreams",
 
+        "//plato/util:nebula_writer",
         "//plato/graph:graph",
         "//plato/algo/pagerank:pagerank",
     ],
@@ -117,6 +118,7 @@ cc_binary (
         "//3rd/boost:boost_include",
         "//3rd/boost:boost_iostreams",
 
+        "//plato/util:nebula_writer",
         "//plato/graph:graph",
         "//plato/algo/pagerank:weighted_pagerank",
     ],
@@ -203,6 +205,7 @@ cc_binary (
         "//3rd/gflags:gflags",
         "//3rd/boost:boost_include",
 
+        "//plato/util:nebula_writer",
         "//plato/graph:graph",
         "//plato/algo/tree_stat:tree_stat",
     ],
@@ -298,6 +301,7 @@ cc_binary (
         "//3rd/boost:boost_include",
         "//3rd/boost:boost_iostreams",
 
+        "//plato/util:nebula_writer",
         "//plato/graph:graph",
         "//plato/algo/hanp:hanp",
     ],
@@ -321,6 +325,7 @@ cc_binary (
         "//3rd/boost:boost_include",
         "//3rd/boost:boost_iostreams",
 
+        "//plato/util:nebula_writer",
         "//plato/graph:graph",
         "//plato/algo/mutual:mutual",
         "//plato/util:thread_local_object",
@@ -345,6 +350,7 @@ cc_binary (
         "//3rd/boost:boost_include",
         "//3rd/boost:boost_iostreams",
 
+        "//plato/util:nebula_writer",
         "//plato/graph:graph",
         "//plato/algo/cnc:cnc",
     ],
@@ -391,6 +397,7 @@ cc_binary (
         "//3rd/boost:boost_include",
         "//3rd/boost:boost_iostreams",
 
+        "//plato/util:nebula_writer",
         "//plato/graph:graph",
         "//plato/algo/bnc:bnc",
     ],
@@ -438,6 +445,7 @@ cc_binary (
         "//3rd/boost:boost_include",
         "//3rd/boost:boost_iostreams",
 
+        "//plato/util:nebula_writer",
         "//plato/graph:graph",
         "//plato/util:thread_local_object",
     ],
@@ -482,6 +490,7 @@ cc_binary (
         "//3rd/gflags:gflags",
         "//3rd/boost:boost_include",
 
+        "//plato/util:nebula_writer",
         "//plato/graph:base",
         "//plato/graph:graph",
         "//plato/algo/fast_unfolding:fast_unfolding",
@@ -506,6 +515,7 @@ cc_binary (
         "//3rd/boost:boost_include",
         "//3rd/boost:boost_iostreams",
 
+        "//plato/util:nebula_writer",
         "//plato/graph:graph",
         "//plato/algo/kcore:kcore",
     ],

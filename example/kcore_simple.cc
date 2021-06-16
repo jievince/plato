@@ -28,14 +28,15 @@
 #include "gflags/gflags.h"
 #include "glog/logging.h"
 
-#include "plato/graph/graph.hpp"
-#include "plato/algo/kcore/kcore.hpp"
-
 #include "boost/format.hpp"
 #include "boost/iostreams/stream.hpp"
 #include "boost/iostreams/filter/gzip.hpp"
 #include "boost/iostreams/filtering_stream.hpp"
 #include "boost/algorithm/string.hpp"
+
+#include "plato/util/nebula_writer.h"
+#include "plato/graph/graph.hpp"
+#include "plato/algo/kcore/kcore.hpp"
 
 
 DEFINE_string(input,     "",           "input edge file in csv format, every vertex must be indexed in range [0, #V)");
@@ -49,6 +50,7 @@ DEFINE_uint32(kmin,      1,            "calculate the k-Core for k the range [km
 DEFINE_uint32(kmax,      1000000,      "calculate the k-Core for k the range [kmin,kmax], \
                                         only take effect when type is subgraph.");
 DEFINE_bool(is_directed, true,         "if set to false, system will add reversed edges automatically");
+DEFINE_bool(need_encode,   false,                    "");
 DEFINE_int32(alpha,      -1,           "alpha value used in sequence balance partition");
 DEFINE_bool(part_by_in,  false,        "partition by in-degree");
 
@@ -103,11 +105,16 @@ int main(int argc, char** argv){
     LOG(INFO) << "kmax:        " << FLAGS_kmax;
     LOG(INFO) << "is_directed: " << FLAGS_is_directed;
   }
-  
+
+  plato::distributed_vid_encoder_t<plato::empty_t> data_encoder;
+
+  auto encoder_ptr = &data_encoder;
+  if (!FLAGS_need_encode) encoder_ptr = nullptr;
+
   plato::graph_info_t graph_info(FLAGS_is_directed);
 
   auto graph = create_bcsr_seqs_from_path<plato::empty_t>(&graph_info, FLAGS_input, plato::edge_format_t::CSV,
-      plato::dummy_decoder<plato::empty_t>, FLAGS_alpha, FLAGS_part_by_in, nullptr, false);
+      plato::dummy_decoder<plato::empty_t>, FLAGS_alpha, FLAGS_part_by_in, encoder_ptr, false);
 
   plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
   auto save_kcore_vertex =

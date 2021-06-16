@@ -30,11 +30,13 @@
 #include "boost/iostreams/filter/gzip.hpp"
 #include "boost/iostreams/filtering_stream.hpp"
 
+#include "plato/util/nebula_writer.h"
 #include "plato/graph/graph.hpp"
 #include "plato/algo/pagerank/weighted_pagerank.hpp"
 DEFINE_string(input,       "",      "input file, in csv format, without edge data");
 DEFINE_string(output,      "",      "output directory");
 DEFINE_bool(is_directed,   false,   "is graph directed or not");
+DEFINE_bool(need_encode,   false,                    "");
 DEFINE_bool(part_by_in,    false,   "partition by in-degree");
 DEFINE_int32(alpha,        -1,      "alpha value used in sequence balance partition");
 DEFINE_uint64(iterations,  100,     "number of iterations");
@@ -66,11 +68,18 @@ int main(int argc, char** argv) {
   cluster_info.initialize(&argc, &argv);
 
   watch.mark("t0");
-  
+
+  using edge_value_t = double;
+
+  plato::distributed_vid_encoder_t<edge_value_t> data_encoder;
+
+  auto encoder_ptr = &data_encoder;
+  if (!FLAGS_need_encode) encoder_ptr = nullptr;
+
   plato::graph_info_t graph_info(FLAGS_is_directed);
-  auto pdcsc = plato::create_dcsc_seqs_from_path<double>(
+  auto pdcsc = plato::create_dcsc_seqs_from_path<edge_value_t>(
     &graph_info, FLAGS_input, plato::edge_format_t::CSV,
-    plato::double_decoder, FLAGS_alpha, FLAGS_part_by_in
+    plato::double_decoder, FLAGS_alpha, FLAGS_part_by_in, encoder_ptr
   );
 
   using graph_spec_t = std::remove_reference<decltype(*pdcsc)>::type;
@@ -88,15 +97,41 @@ int main(int argc, char** argv) {
 
   watch.mark("t0");
   {  // save result to hdfs
-    plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
+    if (!boost::starts_with(FLAGS_output, "nebula:")) {
+      plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
 
-    ranks.foreach<int> (
-      [&](plato::vid_t v_i, double* pval) {
-        auto& fs_output = os.local();
-        fs_output << v_i << "," << *pval << "\n";
-        return 0;
-      }
-    );
+      ranks.foreach<int> (
+        [&](plato::vid_t v_i, double* pval) {
+          auto& fs_output = os.local();
+          if (encoder_ptr != nullptr) {
+            fs_output << encoder_ptr->decode(v_i) << "," << *pval << "\n";
+          } else {
+            fs_output << v_i << "," << *pval << "\n";
+          }
+          return 0;
+        }
+      );
+    } else {
+      struct Item {
+        plato::vid_t vid;
+        double pval;
+        std::string toString() const {
+          return std::to_string(pval);
+        }
+      };
+      plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
+      ranks.foreach<int> (
+        [&](plato::vid_t v_i, double* pval) {
+          auto& buffer = writer.local();
+          if (encoder_ptr != nullptr) {
+            buffer.add(Item{encoder_ptr->decode(v_i), *pval});
+          } else {
+            buffer.add(Item{v_i, *pval});
+          }
+          return 0;
+        }
+      );
+    }
   }
   if (0 == cluster_info.partition_id_) {
     LOG(INFO) << "save result cost: " << watch.show("t1") / 1000.0 << "s";

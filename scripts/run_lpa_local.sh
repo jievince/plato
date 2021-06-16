@@ -14,8 +14,8 @@ WCORES=8
 INPUT=${INPUT:="nebula:$PROJECT/scripts/nebula.conf"}
 #INPUT=${INPUT:="$PROJECT/data/graph/non_coding_5_7.csv"}
 #INPUT=${INPUT:="$PROJECT/data/graph/raw_graph_10_9.csv"}
-#OUTPUT=${OUTPUT:="nebula:$PROJECT/scripts/nebula.conf"}
-OUTPUT=${OUTPUT:="/tmp/lpa"}
+OUTPUT=${OUTPUT:="nebula:$PROJECT/scripts/nebula.conf"}
+#OUTPUT=${OUTPUT:="/tmp/lpa"}
 IS_DIRECTED=${IS_DIRECTED:=true}
 NEED_ENCODE=${NEED_ENCODE:=true}
 ITERATIONS=10

@@ -218,9 +218,9 @@ int main(int argc, char** argv) {
     } else {
       struct Item {
         plato::vid_t vid;
-        double pr;
+        double pval;
         std::string toString() const {
-          return std::to_string(pr);
+          return std::to_string(pval);
         }
       };
       plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
