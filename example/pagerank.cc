@@ -80,7 +80,6 @@ int main(int argc, char** argv) {
 
   watch.mark("t0");
 
-
   plato::distributed_vid_encoder_t<plato::empty_t> data_encoder;
 
   auto encoder_ptr = &data_encoder;

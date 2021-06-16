@@ -229,6 +229,7 @@ ssize_t csv_parser(STREAM_T& fin, blockcallback_t<EdgeData, VID_T> callback, dec
   ssize_t total_count = 0;
   size_t  count = 0;
   size_t  valid_splits = std::is_same<EdgeData, empty_t>::value ? 2 : 3;
+  LOG(INFO) << "valid_splits: " << valid_splits;
 
   char* pSave  = nullptr;
   char* pToken = nullptr;
@@ -344,25 +345,31 @@ ssize_t nebula_scanner(nebula::StorageClient &client, std::string &spaceName,
       // CHECK(dst <= std::numeric_limits<VID_T>::max()) << "dst: " << dst << " exceed max value";
       buffer[count].dst_ = dst;
       if (3 == valid_splits) {
-        CHECK(vals.size() >= 3) << "vals.size() < 3";
-        auto &eDataTypeInfo = typeid(EdgeData);
-        if (eDataTypeInfo == typeid(double)) {
-          CHECK(vals[2].isFloat()) << "vals[2] is not double";
-          auto edata = std::to_string(vals[2].getFloat());
-          if (false == decoder(&(buffer[count].edata_), const_cast<char*>(edata.c_str()))) {
-            LOG(WARNING) << boost::format("can not decode EdgeData from (%s)") % edata;
-            continue;
-          }
-        } else if (eDataTypeInfo == typeid(int64_t)) {
-          CHECK(vals[2].isInt()) << "vals[2] is not int64_t";
-          auto edata = std::to_string(vals[2].getInt());
-          if (false == decoder(&(buffer[count].edata_), const_cast<char*>(edata.c_str()))) {
-            LOG(WARNING) << boost::format("can not decode EdgeData from (%s)") % edata;
+        if (vals.size() == 2) {
+          if (false == decoder(&(buffer[count].edata_), nullptr)) {
+            LOG(WARNING) << boost::format("can not decode EdgeData from (%s)") % "";
             continue;
           }
         } else {
-          LOG(WARNING) << boost::format("Unexcepted edgeData type: (%s)") % eDataTypeInfo.name();
-          continue;
+          auto &eDataTypeInfo = typeid(EdgeData);
+          if (eDataTypeInfo == typeid(double)) {
+            CHECK(vals[2].isFloat()) << "vals[2] is not double";
+            auto edata = std::to_string(vals[2].getFloat());
+            if (false == decoder(&(buffer[count].edata_), const_cast<char*>(edata.c_str()))) {
+              LOG(WARNING) << boost::format("can not decode EdgeData from (%s)") % edata;
+              continue;
+            }
+          } else if (eDataTypeInfo == typeid(int64_t)) {
+            CHECK(vals[2].isInt()) << "vals[2] is not int64_t";
+            auto edata = std::to_string(vals[2].getInt());
+            if (false == decoder(&(buffer[count].edata_), const_cast<char*>(edata.c_str()))) {
+              LOG(WARNING) << boost::format("can not decode EdgeData from (%s)") % edata;
+              continue;
+            }
+          } else {
+            LOG(WARNING) << boost::format("Unexcepted edgeData type: (%s)") % eDataTypeInfo.name();
+            continue;
+          }
         }
       }
       ++total_count;

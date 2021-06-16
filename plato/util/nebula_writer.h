@@ -40,40 +40,59 @@
 
 namespace plato {
 
-#define CHECK_RESPONSE(resp, stmt)                                             \
-  {                                                                            \
-    if (resp.errorCode != nebula::ErrorCode::SUCCEEDED) {                      \
-      LOG(FATAL) << "session execute failed, statment: " << stmt               \
-                 << "\nerrorCode: " << static_cast<int>(resp.errorCode)        \
-                 << ", errorMsg: " << *resp.errorMsg;                          \
-    }                                                                          \
+namespace nebula_writer_configs_detail {
+
+static std::string user_;
+static std::string password_;
+static std::string space_;
+static std::string mode_;
+static int retry_;
+static std::string err_file_;
+static std::string tag_;
+static std::vector<std::string> props_;
+
+} // namespace nebula_writer_configs_detail
+
+bool check_response(const nebula::ExecutionResponse &resp,
+                    const std::string &stmt) {
+  if (resp.errorCode != nebula::ErrorCode::SUCCEEDED) {
+    LOG(INFO) << "session execute failed, statment: " << stmt
+              << "\nerrorCode: " << static_cast<int>(resp.errorCode)
+              << ", errorMsg: " << *resp.errorMsg;
+    return false;
   }
+
+  return true;
+}
 
 template <typename ITEM>
 struct Buffer {
   size_t capacity_;
   nebula::Session *session_;
-  std::string mode_;
-  std::string tag_;
-  std::vector<std::string> props_;
-  std::function<nebula::ErrorCode()> flush_;
+  std::function<int()> flush_;
   std::vector<ITEM> items_;
 
-  Buffer(size_t capacity, nebula::Session *session, const std::string &mode,
-         const std::string &tag, const std::vector<std::string> &props)
-      : capacity_(capacity), session_(session), mode_(mode), tag_(tag),
-        props_(props) {
+  Buffer(size_t capacity, nebula::Session *session)
+      : capacity_(capacity), session_(session) {
     items_.reserve(capacity);
     flush_ = [&]() {
       LOG(INFO) << "flush_...";
       auto stmt = genStmt();
-      CHECK(session_->valid()) << "session_ not valid";
-      CHECK(session_->ping()) << "session ping failed";
-      auto result = session_->execute(stmt);
-      CHECK_RESPONSE(result, stmt);
+      CHECK(!!session_) << "session_ is nullptr";
+      int retry = nebula_writer_configs_detail::retry_;
+      while (retry--) {
+        auto result = session_->execute(stmt);
+        if (check_response(result, stmt)) {
+          break;
+        }
+      }
+      if (retry < 0) {
+        // write to err_file
+        ;
+      }
       // flush succeeded
       items_.clear();
-      return result.errorCode;
+      return 0;
     };
   }
 
@@ -96,9 +115,9 @@ struct Buffer {
       return "";
     }
 
-    if (boost::iequals(mode_, "insert")) {
-      std::string stmt = "INSERT VERTEX " + tag_ + "(";
-      for (auto &prop : props_) {
+    if (boost::iequals(nebula_writer_configs_detail::mode_, "insert")) {
+      std::string stmt = "INSERT VERTEX " + nebula_writer_configs_detail::tag_ + "(";
+      for (auto &prop : nebula_writer_configs_detail::props_) {
         stmt += prop;
         stmt += ",";
       }
@@ -114,13 +133,13 @@ struct Buffer {
       stmt.back() = ';';
 
       return stmt;
-    } else if (boost::iequals(mode_, "update")) {
+    } else if (boost::iequals(nebula_writer_configs_detail::mode_, "update")) {
       std::string stmt;
       for (auto &item : items_) {
-        stmt += "UPDATE VERTEX ON " + tag_ + " ";
+        stmt += "UPDATE VERTEX ON " + nebula_writer_configs_detail::tag_ + " ";
         stmt += std::to_string(item.vid);
         stmt += " SET ";
-        for (auto &prop: props_) {
+        for (auto &prop: nebula_writer_configs_detail::props_) {
           stmt += prop;
           stmt += " = ";
           stmt += item.toString();
@@ -131,7 +150,7 @@ struct Buffer {
 
       return stmt;
     } else {
-      LOG(FATAL) << "invalid mode: " << mode_;
+      LOG(FATAL) << "invalid mode: " << nebula_writer_configs_detail::mode_;
     }
 
     return "";
@@ -156,7 +175,7 @@ public:
 
   thread_local_nebula_writer(const std::string &path) {
     Configs configs(path, "nebula:");
-    std::string graph_server_addrs, user, password, mode, space, tag, props;
+    std::string graph_server_addrs, user, password, mode, space, tag, props, retry, err_file;
     CHECK((graph_server_addrs = configs.get("graph_server_addrs")) != "")
         << "graph_server_addrs doesn't exist.";
     CHECK((user = configs.get("user")) != "") << "user doesn't exist.";
@@ -166,6 +185,8 @@ public:
     CHECK((mode = configs.get("mode")) != "") << "props doesn't exist.";
     CHECK((tag = configs.get("tag")) != "") << "tag doesn't exist.";
     CHECK((props = configs.get("props")) != "") << "props doesn't exist.";
+    CHECK((retry = configs.get("retry")) != "") << "retry doesn't exist.";
+    CHECK((err_file = configs.get("err_file")) != "") << "err_file doesn't exist.";
 
     std::vector<std::string> graphServers;
     boost::split(graphServers, graph_server_addrs, boost::is_any_of(","),
@@ -182,25 +203,34 @@ public:
     poolConfig.maxConnectionPoolSize_ = cluster_info.threads_;
     pool_->init(graphServers, poolConfig);
 
+    nebula_writer_configs_detail::user_ = user;
+    nebula_writer_configs_detail::password_ = password;
+    nebula_writer_configs_detail::space_ = space;
+    nebula_writer_configs_detail::mode_ = mode;
+    nebula_writer_configs_detail::tag_ = tag;
+    nebula_writer_configs_detail::props_ = tagProps;
+    nebula_writer_configs_detail::retry_ = stoi(retry);
+    nebula_writer_configs_detail::err_file_ = err_file;
+
     std::function<void *()> construction(
-        [this, user, password, space, mode, tag, tagProps] {
+        [this] {
           nebula::Session *session =
-              new nebula::Session(this->pool_->getSession(user, password));
+              new nebula::Session(this->pool_->getSession(nebula_writer_configs_detail::user_, nebula_writer_configs_detail::password_));
           CHECK(session) << "session is nullptr";
           CHECK(session->valid()) << "session is not valid";
           CHECK(session->ping()) << "session ping failed";
           std::string stmt;
           nebula::ExecutionResponse result;
 
-          stmt = "USE " + space;
+          stmt = "USE " + nebula_writer_configs_detail::space_;
           result = session->execute(stmt);
-          CHECK_RESPONSE(result, stmt);
+          CHECK(check_response(result, stmt));
 
-          stmt = "DESC TAG " + tag;
+          stmt = "DESC TAG " + nebula_writer_configs_detail::tag_;
           result = session->execute(stmt);
-          CHECK_RESPONSE(result, stmt);
+          CHECK(check_response(result, stmt));
 
-          auto *buff_ = new Buffer<ITEM>(1000, session, mode, tag, tagProps);
+          auto *buff_ = new Buffer<ITEM>(1000, session);
 
           return (void *)buff_;
         });

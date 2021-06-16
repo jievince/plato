@@ -458,6 +458,7 @@ cc_binary (
         "//3rd/gflags:gflags",
         "//3rd/boost:boost_include",
 
+        "//plato/util:nebula_writer",
         "//plato/graph:base",
         "//plato/graph:graph",
         "//plato/algo/fast_unfolding:fast_unfolding",
