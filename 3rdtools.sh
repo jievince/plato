@@ -184,13 +184,11 @@ function install {
   popd
 
   ## nebula-cpp
-  if [ ! -f nebula-cpp-master.zip ]; then
-    clean_exec wget -O nebula-cpp-master.zip https://github.com/vesoft-inc/nebula-cpp/archive/refs/heads/master.zip
+  if [ ! -f nebula-cpp ]; then
+    clean_exec git clone -b scan https://github.com/jievince/nebula-cpp.git
   fi
-  clean_exec rm -rf nebula-cpp-master
-  clean_exec unzip nebula-cpp-master.zip
 
-  pushd nebula-cpp-master
+  pushd nebula-cpp
   clean_exec mkdir build
   pushd build
   clean_exec cmake -DCMAKE_INSTALL_PREFIX=${rootdir}/3rd/nebula-cpp ..
