@@ -274,6 +274,7 @@ cc_binary (
         "//3rd/boost:boost_include",
         "//3rd/boost:boost_iostreams",
 
+        "//plato/util:nebula_writer",
         "//plato/graph:graph",
         "//plato/algo/lpa:lpa",
     ],
