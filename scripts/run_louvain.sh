@@ -2,7 +2,7 @@
 
 PROJECT="$(cd "$(dirname "$0")" && pwd)/.."
 
-MAIN="./bazel-bin/example/pagerank" # process name
+MAIN="./bazel-bin/example/fast_unfolding_simple" # process name
 
 WNUM=3
 WCORES=8
@@ -19,13 +19,14 @@ PART_BY_IN=false
 
 EPS=${EPS:=0.0001}
 DAMPING=${DAMPING:=0.85}
-ITERATIONS=${ITERATIONS:=100}
+OUTER_ITERATION=10
+INNER_ITERATION=10
 
 export MPIRUN_CMD=${MPIRUN_CMD:="${PROJECT}/3rd/mpich-3.2.1/bin/mpiexec.hydra"}
 
 PARAMS+=" --threads ${WCORES}"
 PARAMS+=" --input ${INPUT} --output ${OUTPUT} --is_directed=${IS_DIRECTED} --need_encode=${NEED_ENCODE}"
-PARAMS+=" --iterations ${ITERATIONS} --eps ${EPS} --damping ${DAMPING}"
+PARAMS+=" --outer_iteration ${OUTER_ITERATION} --inner_iteration ${INNER_ITERATION}"
 
 # env for JAVA && HADOOP
 export LD_LIBRARY_PATH=${JAVA_HOME}/jre/lib/amd64/server:${LD_LIBRARY_PATH}
