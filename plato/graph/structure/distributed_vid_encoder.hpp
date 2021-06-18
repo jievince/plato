@@ -62,12 +62,12 @@ struct vid_encoded_msg_t {
 };
 
 template<typename VID_T>
-inline typename std::enable_if<std::is_integral<VID_T>::value, size_t> SIZE(VID_T) { // could it marked as inline?
+inline typename std::enable_if<std::is_integral<VID_T>::value, size_t>::type SIZE(VID_T) { // could it marked as inline?
   return sizeof(VID_T);
 }
 
 template<typename VID_T>
-inline typename std::enable_if<!std::is_integral<VID_T>::value, size_t> SIZE(VID_T vid) {
+inline typename std::enable_if<!std::is_integral<VID_T>::value, size_t>::type SIZE(VID_T vid) {
   return vid.size();
 }
 

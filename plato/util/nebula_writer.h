@@ -76,7 +76,7 @@ struct Buffer {
       : capacity_(capacity), session_(session) {
     items_.reserve(capacity);
     flush_ = [&]() {
-      LOG(INFO) << "flush_...";
+      LOG(INFO) << "flush_, items_.size()=" << items_.size();
       auto stmt = genStmt();
       CHECK(!!session_) << "session_ is nullptr";
       int retry = nebula_writer_configs_detail::retry_;
@@ -104,7 +104,7 @@ struct Buffer {
 
   void add(const ITEM &item) {
     items_.emplace_back(item);
-    if (items_.size() > capacity_) {
+    if (items_.size() >= capacity_) {
       flush_();
       items_.clear();
     }
@@ -238,7 +238,7 @@ public:
     std::function<void(void *)> destruction([](void *p) {
       auto *buff_ = (Buffer<ITEM> *)p;
       if (!buff_->items_.empty()) {
-        LOG(INFO) << "flush buff_...";
+        LOG(INFO) << "flush_ in desctruction, items_.size()=" << buff_->items_.size();
         buff_->flush_();
       }
       delete buff_;

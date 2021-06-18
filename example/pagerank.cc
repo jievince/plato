@@ -46,6 +46,7 @@
 
 DEFINE_string(input,       "",      "input file, in csv format, without edge data");
 DEFINE_string(output,      "",      "output directory");
+DEFINE_string(vtype,       "uint32",                 "");
 DEFINE_bool(is_directed,   false,   "is graph directed or not");
 DEFINE_bool(need_encode,   false,                    "");
 DEFINE_bool(part_by_in,    false,   "partition by in-degree");
@@ -70,33 +71,31 @@ void init(int argc, char** argv) {
   google::LogToStderr();
 }
 
-int main(int argc, char** argv) {
+template <typename VID_T>
+void run_pagerank() {
   plato::stop_watch_t watch;
   auto& cluster_info = plato::cluster_info_t::get_instance();
 
-  //nebula::init(&argc, &argv);
-  init(argc, argv);
-  cluster_info.initialize(&argc, &argv);
-
   watch.mark("t0");
 
-  plato::distributed_vid_encoder_t<plato::empty_t> data_encoder;
+  plato::distributed_vid_encoder_t<plato::empty_t, VID_T> data_encoder;
 
   auto encoder_ptr = &data_encoder;
   if (!FLAGS_need_encode) encoder_ptr = nullptr;
 
   // init graph
   plato::graph_info_t graph_info(FLAGS_is_directed);
-  auto pdcsc = plato::create_dcsc_seqs_from_path<plato::empty_t>( // seqs means seq part_by_src [master src]->[mirror dst] dense
+  auto pdcsc = plato::create_dcsc_seqs_from_path<plato::empty_t, VID_T>( // seqs means seq part_by_src [master src]->[mirror dst] dense
     &graph_info, FLAGS_input, plato::edge_format_t::CSV,
     plato::dummy_decoder<plato::empty_t>, FLAGS_alpha, FLAGS_part_by_in, encoder_ptr
   );
 
-  using graph_spec_t         = std::remove_reference<decltype(*pdcsc)>::type;
-  using partition_t          = graph_spec_t::partition_t;
-  using adj_unit_list_spec_t = graph_spec_t::adj_unit_list_spec_t;
-  using rank_state_t         = plato::dense_state_t<double, partition_t>;
+  using graph_spec_t         = typename std::remove_reference<decltype(*pdcsc)>::type;
+  using partition_t          = typename graph_spec_t::partition_t;
+  using adj_unit_list_spec_t = typename graph_spec_t::adj_unit_list_spec_t;
+  using rank_state_t         = typename plato::dense_state_t<double, partition_t>;
 
+  rank_state_t rank_tmp(18, nullptr);
   // init state
   std::shared_ptr<rank_state_t> curt_rank(new rank_state_t(graph_info.max_v_i_, pdcsc->partitioner()));
   std::shared_ptr<rank_state_t> next_rank(new rank_state_t(graph_info.max_v_i_, pdcsc->partitioner()));
@@ -111,7 +110,7 @@ int main(int argc, char** argv) {
 
   watch.mark("t2"); // do computation
 
-  double delta = curt_rank->foreach<double> (
+  double delta = curt_rank->template foreach<double> (
     [&](plato::vid_t v_i, double* pval) {
       *pval = 1.0;
       if (odegrees[v_i] > 0) {
@@ -120,6 +119,7 @@ int main(int argc, char** argv) {
       return 1.0;
     }
   );
+  LOG(INFO) << delta;
 
   using context_spec_t = plato::mepa_ag_context_t<double>;
   using message_spec_t = plato::mepa_ag_message_t<double>;
@@ -160,14 +160,14 @@ int main(int argc, char** argv) {
 
     watch.mark("t1");
     if (FLAGS_iterations - 1 == epoch_i) {
-      delta = next_rank->foreach<double> (
+      delta = next_rank->template foreach<double> (
         [&](plato::vid_t v_i, double* pval) {
           *pval = 1.0 - FLAGS_damping + FLAGS_damping * (*pval); // 计算最终pagerank值
           return 0;
         }
       );
     } else {
-      delta = next_rank->foreach<double> (
+      delta = next_rank->template foreach<double> (
         [&](plato::vid_t v_i, double* pval) {
           *pval = 1.0 - FLAGS_damping + FLAGS_damping * (*pval);
           if (odegrees[v_i] > 0) {
@@ -189,7 +189,7 @@ int main(int argc, char** argv) {
     std::swap(curt_rank, next_rank);
   }
 
-  delta = curt_rank->foreach<double> (
+  delta = curt_rank->template foreach<double> (
     [&](plato::vid_t v_i, double* pval) {
       return *pval;
     }
@@ -204,7 +204,7 @@ int main(int argc, char** argv) {
   {  // save result to hdfs
     if (!boost::starts_with(FLAGS_output, "nebula:")) {
       plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
-      curt_rank->foreach<int> (
+      curt_rank->template foreach<int> (
         [&](plato::vid_t v_i, double* pval) {
           auto& fs_output = os.local();
           if (encoder_ptr != nullptr) {
@@ -217,14 +217,14 @@ int main(int argc, char** argv) {
       );
     } else {
       struct Item {
-        plato::vid_t vid;
+        VID_T vid;
         double pval;
         std::string toString() const {
           return std::to_string(pval);
         }
       };
       plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
-      curt_rank->foreach<int> (
+      curt_rank->template foreach<int> (
         [&](plato::vid_t v_i, double* pval) {
           auto& buffer = writer.local();
           if (encoder_ptr != nullptr) {
@@ -244,6 +244,31 @@ int main(int argc, char** argv) {
   plato::mem_status_t mstatus;
   plato::self_mem_usage(&mstatus);
   LOG(INFO) << "memory usage: " << (double)mstatus.vm_rss / 1024.0 << " MBytes";
+
+}
+
+int main(int argc, char** argv) {
+  auto& cluster_info = plato::cluster_info_t::get_instance();
+
+  //nebula::init(&argc, &argv);
+  init(argc, argv);
+  cluster_info.initialize(&argc, &argv);
+
+  if (FLAGS_vtype == "uint32") {
+    run_pagerank<uint32_t>();
+  } else if (FLAGS_vtype == "int32")  {
+    run_pagerank<int32_t>();
+  } else if (FLAGS_vtype == "uint64") {
+    run_pagerank<uint64_t>();
+  } else if (FLAGS_vtype == "int64") {
+    run_pagerank<int64_t>();
+  }
+  // else if (FLAGS_vtype == "string") {
+  //   run_pagerank<std::string>();
+  // }
+  else {
+    LOG(FATAL) << "unknown vtype: " << FLAGS_vtype;
+  }
 
   return 0;
 }

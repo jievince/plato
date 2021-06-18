@@ -295,6 +295,34 @@ ssize_t csv_parser(STREAM_T& fin, blockcallback_t<EdgeData, VID_T> callback, dec
   return total_count;
 }
 
+template <typename VID_T>
+inline typename std::enable_if<std::is_integral<VID_T>::value, int64_t>::type
+parseVID(const nebula::Value &val) {
+  CHECK(val.isInt());
+  return val.getInt();
+}
+
+template <typename VID_T>
+inline typename std::enable_if<!std::is_integral<VID_T>::value, std::string>::type
+parseVID(const nebula::Value &val) {
+  CHECK(val.isStr());
+  return val.getStr();
+}
+
+template <typename EdgeData>
+inline typename std::enable_if<std::is_integral<EdgeData>::value, int64_t>::type
+parseEdgeData(const nebula::Value &val) {
+  CHECK(val.isInt());
+  return val.getInt();
+}
+
+template <typename EdgeData>
+inline typename std::enable_if<!std::is_integral<EdgeData>::value, double>::type
+parseEdgeData(const nebula::Value &val) {
+  CHECK(val.isFloat());
+  return val.getFloat();
+}
+
 template <typename EdgeData, typename VID_T = vid_t>
 using nebula_scanner_t = std::function<ssize_t(
     nebula::StorageClient &, std::string &, std::uint32_t, std::string &,
@@ -338,10 +366,10 @@ ssize_t nebula_scanner(nebula::StorageClient &client, std::string &spaceName,
     for (auto &row : ds.rows) {
       auto &vals = row.values;
       CHECK(vals.size() >= 2) << "vals.size() < 2";
-      auto src = vals[0].getInt();
+      auto src = parseVID<VID_T>(vals[0]);
       // CHECK(src <= std::numeric_limits<VID_T>::max()) << "src: " << src << " exceed max value";
       buffer[count].src_ = src;
-      auto dst = vals[1].getInt();
+      auto dst = parseVID<VID_T>(vals[1]);
       // CHECK(dst <= std::numeric_limits<VID_T>::max()) << "dst: " << dst << " exceed max value";
       buffer[count].dst_ = dst;
       if (3 == valid_splits) {
@@ -351,25 +379,11 @@ ssize_t nebula_scanner(nebula::StorageClient &client, std::string &spaceName,
             continue;
           }
         } else {
-          auto &eDataTypeInfo = typeid(EdgeData);
-          if (eDataTypeInfo == typeid(double)) {
-            CHECK(vals[2].isFloat()) << "vals[2] is not double";
-            auto edata = std::to_string(vals[2].getFloat());
+            auto edata = std::to_string(parseEdgeData<EdgeData>(vals[2]));
             if (false == decoder(&(buffer[count].edata_), const_cast<char*>(edata.c_str()))) {
               LOG(WARNING) << boost::format("can not decode EdgeData from (%s)") % edata;
               continue;
             }
-          } else if (eDataTypeInfo == typeid(int64_t)) {
-            CHECK(vals[2].isInt()) << "vals[2] is not int64_t";
-            auto edata = std::to_string(vals[2].getInt());
-            if (false == decoder(&(buffer[count].edata_), const_cast<char*>(edata.c_str()))) {
-              LOG(WARNING) << boost::format("can not decode EdgeData from (%s)") % edata;
-              continue;
-            }
-          } else {
-            LOG(WARNING) << boost::format("Unexcepted edgeData type: (%s)") % eDataTypeInfo.name();
-            continue;
-          }
         }
       }
       ++total_count;
