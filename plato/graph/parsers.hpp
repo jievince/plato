@@ -195,6 +195,20 @@ char* convert_and_check(char* pToken) {
   return pToken;
 }
 
+template <typename VID_T>
+inline typename std::enable_if<std::is_integral<VID_T>::value, int64_t>::type
+convert_and_check(const nebula::Value &val) {
+  CHECK(val.isInt());
+  return val.getInt();
+}
+
+template <typename VID_T>
+inline typename std::enable_if<!std::is_integral<VID_T>::value, std::string>::type
+convert_and_check(const nebula::Value &val) {
+  CHECK(val.isStr());
+  return val.getStr();
+}
+
 /*
  * \brief edge_parser_t,  parse from input stream, call user provide function when buffer if full
  *                        edge_parser_t must be reentrant
@@ -343,7 +357,7 @@ parseEdgeData(const nebula::Value &val) {
 template <typename EdgeData, typename VID_T = vid_t>
 using nebula_scanner_t = std::function<ssize_t(
     nebula::StorageClient &, std::string &, std::uint32_t, std::string &,
-    std::string &, blockcallback_t<EdgeData, VID_T>, decoder_t<EdgeData>)>;
+    std::string &, int64_t, blockcallback_t<EdgeData, VID_T>, decoder_t<EdgeData>)>;
 
 /**
  * @brief parser for csv format
@@ -360,6 +374,7 @@ template <typename EdgeData, typename VID_T = vid_t>
 ssize_t nebula_scanner(nebula::StorageClient &client, std::string &spaceName,
                        std::uint32_t partID, std::string &edgeName,
                        std::string &edgeDataField,
+                       int64_t readBatchSize,
                        blockcallback_t<EdgeData, VID_T> callback,
                        decoder_t<EdgeData> decoder) {
   ssize_t total_count = 0;
@@ -376,17 +391,17 @@ ssize_t nebula_scanner(nebula::StorageClient &client, std::string &spaceName,
                                           partID,
                                           edgeName,
                                           propNames,
-                                          10000);
+                                          readBatchSize);
 
   while (scanIter.hasNext()) {
     nebula::DataSet ds = scanIter.next();
     for (auto &row : ds.rows) {
       auto &vals = row.values;
       CHECK(vals.size() >= 2) << "vals.size() < 2";
-      auto src = parseVID<VID_T>(vals[0]);
+      auto src = convert_and_check<VID_T>(vals[0]);
       // CHECK(src <= std::numeric_limits<VID_T>::max()) << "src: " << src << " exceed max value";
       buffer[count].src_ = src;
-      auto dst = parseVID<VID_T>(vals[1]);
+      auto dst = convert_and_check<VID_T>(vals[1]);
       // CHECK(dst <= std::numeric_limits<VID_T>::max()) << "dst: " << dst << " exceed max value";
       buffer[count].dst_ = dst;
       if (3 == valid_splits) {

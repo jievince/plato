@@ -52,14 +52,14 @@ namespace nebula_writer_configs_detail {
 
 static std::string user_;
 static std::string password_;
-static std::string space_;
+static std::string write_space_;
 static std::string mode_;
 static int retry_;
 static std::string err_file_;
 static std::string tag_;
 static std::string prop_;
 static std::string type_;
-static size_t batch_size_;
+static size_t write_batch_size_;
 
 } // namespace nebula_writer_configs_detail
 
@@ -181,20 +181,20 @@ public:
 
   thread_local_nebula_writer(const std::string &path) {
     Configs configs(path, "nebula:");
-    std::string graph_server_addrs, user, password, mode, space, tag, prop,
-        type, batch_size, retry, err_file;
+    std::string graph_server_addrs, user, password, mode, write_space, tag, prop,
+        type, write_batch_size, retry, err_file;
     CHECK((graph_server_addrs = configs.get("graph_server_addrs")) != "")
         << "graph_server_addrs doesn't exist.";
     CHECK((user = configs.get("user")) != "") << "user doesn't exist.";
     CHECK((password = configs.get("password")) != "")
         << "password doesn't exist.";
-    CHECK((space = configs.get("space")) != "") << "space doesn't exist";
+    CHECK((write_space = configs.get("write_space")) != "") << "write_space doesn't exist";
     CHECK((mode = configs.get("mode")) != "") << "mode doesn't exist.";
     CHECK((tag = configs.get("tag")) != "") << "tag doesn't exist.";
     CHECK((prop = configs.get("prop")) != "") << "prop doesn't exist.";
     CHECK((type = configs.get("type")) != "") << "type doesn't exist.";
-    CHECK((batch_size = configs.get("batch_size")) != "")
-        << "batch_size doesn't exist.";
+    CHECK((write_batch_size = configs.get("write_batch_size")) != "")
+        << "write_batch_size doesn't exist.";
     CHECK((retry = configs.get("retry")) != "") << "retry doesn't exist.";
     CHECK((err_file = configs.get("err_file")) != "")
         << "err_file doesn't exist.";
@@ -203,8 +203,8 @@ public:
     boost::split(graphServers, graph_server_addrs, boost::is_any_of(","),
                  boost::token_compress_on);
 
-    auto batchSize = strtoul(batch_size.c_str(), nullptr, 10);
-    CHECK(batchSize > 0) << "batch_size: " << batchSize
+    auto writeBatchSize = strtoul(write_batch_size.c_str(), nullptr, 10);
+    CHECK(writeBatchSize > 0) << "write_batch_size: " << writeBatchSize
                          << " should be positive";
 
     auto &cluster_info = cluster_info_t::get_instance();
@@ -216,19 +216,21 @@ public:
 
     auto session = pool_->getSession(user, password);
     CHECK(session.valid()) << "session is not valid";
-    auto stmt = "USE " + space + ";CREATE TAG IF NOT EXISTS " + tag + "(" + prop + " " + type + ")";
+    auto stmt = "USE " + write_space + ";CREATE TAG IF NOT EXISTS " + tag + "(" + prop + " " + type + ")";
     auto result = session.execute(stmt);
     CHECK(check_response(result, stmt));
-    poll(nullptr, 0, 10000); // wait for schema to load into cache
+    LOG(INFO) << "waiting for schema to load into cache...";
+    poll(nullptr, 0, 10000); // wait for 10s
+    LOG(INFO) << "schema loaded into cache!";
 
     nebula_writer_configs_detail::user_ = user;
     nebula_writer_configs_detail::password_ = password;
-    nebula_writer_configs_detail::space_ = space;
+    nebula_writer_configs_detail::write_space_ = write_space;
     nebula_writer_configs_detail::mode_ = mode;
     nebula_writer_configs_detail::tag_ = tag;
     nebula_writer_configs_detail::prop_ = prop;
     nebula_writer_configs_detail::type_ = type;
-    nebula_writer_configs_detail::batch_size_ = batchSize;
+    nebula_writer_configs_detail::write_batch_size_ = writeBatchSize;
     nebula_writer_configs_detail::retry_ = stoi(retry);
     nebula_writer_configs_detail::err_file_ = err_file;
 
@@ -241,12 +243,12 @@ public:
       std::string stmt;
       nebula::ExecutionResponse result;
 
-      stmt = "USE " + nebula_writer_configs_detail::space_;
+      stmt = "USE " + nebula_writer_configs_detail::write_space_;
       result = session->execute(stmt);
       CHECK(check_response(result, stmt));
 
       auto *buff_ =
-          new Buffer<ITEM>(nebula_writer_configs_detail::batch_size_, session);
+          new Buffer<ITEM>(nebula_writer_configs_detail::write_batch_size_, session);
 
       return (void *)buff_;
     });
