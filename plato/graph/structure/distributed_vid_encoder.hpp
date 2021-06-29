@@ -62,14 +62,52 @@ struct vid_encoded_msg_t {
 };
 
 template<typename VID_T>
-inline typename std::enable_if<std::is_integral<VID_T>::value, size_t>::type SIZE(VID_T) { // could it marked as inline?
+inline typename std::enable_if<std::is_integral<VID_T>::value, size_t>::type size(VID_T) { // could it marked as inline?
   return sizeof(VID_T);
 }
 
 template<typename VID_T>
-inline typename std::enable_if<!std::is_integral<VID_T>::value, size_t>::type SIZE(VID_T vid) {
+inline typename std::enable_if<!std::is_integral<VID_T>::value, size_t>::type size(VID_T vid) {
   return vid.size();
 }
+
+template<typename VID_T>
+inline typename std::enable_if<std::is_integral<VID_T>::value, const VID_T*>::type addr(const VID_T& vid) { // could it marked as inline?
+  return &vid;
+}
+
+template<typename VID_T>
+inline typename std::enable_if<!std::is_integral<VID_T>::value, const char*>::type addr(const VID_T& vid) {
+  return vid.c_str();
+}
+
+template<typename VID_T>
+inline typename std::enable_if<std::is_integral<VID_T>::value, uint32_t>::type hash(VID_T vid) { // could it marked as inline?
+  return murmur_hash2(&vid, sizeof(VID_T));
+}
+
+template<typename VID_T>
+inline typename std::enable_if<!std::is_integral<VID_T>::value, uint32_t>::type hash(const VID_T& vid) {
+  return murmur_hash2(vid.c_str(), vid.size());
+}
+
+template<typename VID_T>
+inline typename std::enable_if<std::is_integral<VID_T>::value, void>::type mpi_recv(VID_T& vid, int part) { // could it marked as inline?
+  MPI_Recv(&vid, sizeof(VID_T), MPI_CHAR, part, Response, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+}
+
+template<typename VID_T>
+inline typename std::enable_if<!std::is_integral<VID_T>::value, void>::type mpi_recv(VID_T& vid, int part) {
+  MPI_Status status;
+  int  recv_bytes  = 0;
+  char *s = nullptr;
+  MPI_Probe(part, Response, MPI_COMM_WORLD, &status);
+  MPI_Get_count(&status, MPI_CHAR, &recv_bytes);
+  s = new char[recv_bytes];
+  MPI_Recv(s, recv_bytes, MPI_CHAR, part, Response, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  vid = std::string(s, recv_bytes);
+}
+
 
 template <typename EDATA, typename VID_T = vid_t, template<typename, typename> class CACHE = edge_block_cache_t>
 class distributed_vid_encoder_t : public vid_encoder_base_t<EDATA, VID_T, CACHE>{
@@ -82,9 +120,8 @@ public:
    * @brief
    * @param opts
    */
-  distributed_vid_encoder_t(
-      const vid_encoder_opts_t &opts = vid_encoder_opts_t())
-      : opts_(opts), encoded_cache_(HUGESIZE), decoded_cache_(HUGESIZE) {}
+  distributed_vid_encoder_t()
+      : encoded_cache_(HUGESIZE), decoded_cache_(HUGESIZE) {}
 
   ~distributed_vid_encoder_t() {
     MPI_Barrier(MPI_COMM_WORLD);
@@ -107,15 +144,17 @@ public:
    * @return
    */
   VID_T decode(vid_t v_i) override {
+    LOG(INFO) << "try to decode v_i: " << v_i;
     CHECK(v_i < local_vid_offset_.back())
         << "v: " << v_i << " exceed max value " << local_vid_offset_.back();
 
     auto &cluster_info = plato::cluster_info_t::get_instance();
     auto local_vid_start = local_vid_offset_[cluster_info.partition_id_];
     auto local_vid_end = local_vid_offset_[cluster_info.partition_id_ + 1];
+    LOG(INFO) << "local_vid_start: " << local_vid_start << ", local_vid_end: " << local_vid_end;
 
     if (v_i >= local_vid_start && v_i < local_vid_end) {
-      //LOG(INFO) << "[" << cluster_info.partition_id_ << "]" << "decode() locally " << "v_i " << v_i << " --> " << local_ids_[v_i-local_vid_start];
+      LOG(INFO) << "[" << cluster_info.partition_id_ << "]" << "decode() locally " << "v_i " << v_i << " --> " << local_ids_[v_i-local_vid_start];
       return local_ids_[v_i-local_vid_start];
     }
     // else if (decoded_cache_.Cached(v_i)) {
@@ -123,12 +162,32 @@ public:
     //   return decoded_cache_.Get(v_i);
     // }
     else {
-      //LOG(INFO) << "decode cache not cached!!!!, decoded cache size: " << decoded_cache_.Size();
+      LOG(INFO) << "decode cache not cached!!!!, decoded cache size: " << decoded_cache_.Size();
       VID_T decoded_v_i;
       auto send_to = get_part_id(v_i);
-      MPI_Sendrecv(&v_i, sizeof(vid_t), MPI_CHAR, send_to, Request,
-                   &decoded_v_i, 512, MPI_CHAR, send_to, Response, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      //LOG(INFO) << "[" << cluster_info.partition_id_ << "]" << "decode() on " << send_to << "v_i " << v_i << " --> " << decoded_v_i;
+      LOG(INFO) << "send_to: " << send_to;
+      // MPI_Sendrecv(&v_i, sizeof(vid_t), MPI_CHAR, send_to, Request,
+      //              &decoded_v_i, 512, MPI_CHAR, send_to, Response, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      MPI_Send(&v_i, sizeof(vid_t), MPI_CHAR, send_to, Request, MPI_COMM_WORLD);
+      LOG(INFO) << "has sendted";
+
+      mpi_recv(decoded_v_i, send_to);
+
+      // if (std::is_integral<VID_T>::value) {
+      //   MPI_Recv(&decoded_v_i, sizeof(VID_T), MPI_CHAR, send_to, Response, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      // } else {
+      //   MPI_Status status;
+      //   int  recv_bytes  = 0;
+      //   char *a;
+      //   MPI_Probe(send_to, Response, MPI_COMM_WORLD, &status);
+      //   MPI_Get_count(&status, MPI_CHAR, &recv_bytes);
+      //   MPI_Recv(a, recv_bytes, MPI_CHAR, send_to, Response, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      //   decoded_v_i = std::string(a, recv_bytes);
+      // }
+      //MPI_Recv(&decoded_v_i, 512, MPI_CHAR, send_to, Response, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      LOG(INFO) << "has recved";
+      LOG(INFO) << "decoded v_i: " << decoded_v_i;
+      LOG(INFO) << "[" << cluster_info.partition_id_ << "]" << "decode() on " << send_to << "v_i " << v_i << " --> " << decoded_v_i;
       //decoded_cache_.Put(v_i, decoded_v_i);
       return decoded_v_i;
     }
@@ -159,7 +218,6 @@ private:
 private:
   std::vector<VID_T> local_ids_;
   std::vector<vid_t> local_vid_offset_;
-  vid_encoder_opts_t opts_;
 
   lru_cache_t<VID_T, vid_t> encoded_cache_;
   lru_cache_t<vid_t, VID_T> decoded_cache_;
@@ -191,19 +249,16 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
     spread_message<VID_T, vid_t>(
       cache,
       [&](const push_context_t& context, size_t i, edge_unit_spec_t *edge) {
-        if (opts_.src_need_encode_) {
-          bool upserted = used.upsert(edge->src_, [](vid_t&){}, 0);
-          if (upserted) {
-            auto send_to = murmur_hash2(&(edge->src_), sizeof(VID_T)) % cluster_info.partitions_;
-            context.send(send_to, edge->src_);
-          }
+        bool upserted = used.upsert(edge->src_, [](vid_t&){}, 0);
+        if (upserted) {
+          auto send_to = hash(edge->src_) % cluster_info.partitions_;
+          context.send(send_to, edge->src_);
         }
-        if (opts_.dst_need_encode_) {
-          bool upserted = used.upsert(edge->dst_, [](vid_t&){}, 0);
-          if (upserted) {
-            auto send_to = murmur_hash2(&(edge->dst_), sizeof(VID_T)) % cluster_info.partitions_;
-            context.send(send_to, edge->dst_);
-          }
+
+        upserted = used.upsert(edge->dst_, [](vid_t&){}, 0);
+        if (upserted) {
+          auto send_to = hash(edge->dst_) % cluster_info.partitions_;
+          context.send(send_to, edge->dst_);
         }
       },
       [&](VID_T& msg) {
@@ -282,7 +337,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
     auto spread_task = [&](const push_context_t& context, size_t i, edge_unit_spec_t *edge) { /// 发送编码请求--> 发送读cache的ShuffleFin
       size_t idx = k.fetch_add(1, std::memory_order_relaxed);
       items[idx].edata_ = edge->edata_;
-      if (opts_.src_need_encode_) {
+      {
         sended.fetch_add(1);
         // if (encoded_cache_.Cached(edge->src_)) {
         //   LOG(INFO) << "hit encoded cache";
@@ -290,28 +345,22 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>&
         //   cache_hits.fetch_add(1);
         // } else {
           //LOG(INFO) << "encode cache not cached!!!!, encoded cache size: " << encoded_cache_.Size();
-          auto send_to = murmur_hash2(&(edge->src_), sizeof(edge->src_)) %
-                        cluster_info.partitions_;
-          auto to_encode_msg = vid_to_encode_msg_t<VID_T>{edge->src_, idx, true};
-          context.send(send_to, to_encode_msg);
+        auto send_to = hash(edge->src_) % cluster_info.partitions_;
+        auto to_encode_msg = vid_to_encode_msg_t<VID_T>{edge->src_, idx, true};
+        context.send(send_to, to_encode_msg);
         // }
-      } else {
-        items[idx].src_ = edge->src_;
       }
-      if (opts_.dst_need_encode_) {
+      {
         sended.fetch_add(1);
         // if (encoded_cache_.Cached(edge->dst_)) {
         //   LOG(INFO) << "hit encoded cache";
         //   items[idx].dst_ = encoded_cache_.Get(edge->dst_);
         //   cache_hits.fetch_add(1);
         // } else {
-          auto send_to = murmur_hash2(&(edge->dst_), sizeof(edge->dst_)) %
-                        cluster_info.partitions_;
-          auto to_encode_msg = vid_to_encode_msg_t<VID_T>{edge->dst_, idx, false};
-          context.send(send_to, to_encode_msg);
+        auto send_to = hash(edge->dst_) % cluster_info.partitions_;
+        auto to_encode_msg = vid_to_encode_msg_t<VID_T>{edge->dst_, idx, false};
+        context.send(send_to, to_encode_msg);
         // }
-      } else {
-        items[idx].dst_ = edge->dst_;
       }
     };
 
@@ -399,7 +448,7 @@ int distributed_vid_encoder_t<EDATA, VID_T, CACHE>::launch_decoder() {
                 << ")";
             VID_T decoded_v_i = local_ids_[v_i-local_vid_start];
             MPI_Irecv(&recv_buff[index], sizeof(vid_t), MPI_CHAR, MPI_ANY_SOURCE, Request, MPI_COMM_WORLD, &recv_requests_vec[index]);
-            MPI_Send(&decoded_v_i, sizeof(VID_T), MPI_CHAR, status.MPI_SOURCE, Response, MPI_COMM_WORLD);
+            MPI_Send(addr(decoded_v_i), size(decoded_v_i), MPI_CHAR, status.MPI_SOURCE, Response, MPI_COMM_WORLD);
 
             has_message=true;
             if (false == continued) { break; }

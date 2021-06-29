@@ -38,6 +38,10 @@
 #include "plato/util/configs.hpp"
 #include "thread_local_object.h"
 
+namespace std {
+inline string to_string(const std::string &__val) { return "\"" + __val + "\""; }
+} // namespace std
+
 namespace plato {
 
 namespace nebula_writer_configs_detail {
@@ -50,9 +54,13 @@ static int retry_;
 static std::string err_file_;
 static std::string tag_;
 static std::vector<std::string> props_;
+static size_t batch_size_;
 
 } // namespace nebula_writer_configs_detail
 
+std::string to_string(std::string value) {
+  return value;
+}
 bool check_response(const nebula::ExecutionResponse &resp,
                     const std::string &stmt) {
   if (resp.errorCode != nebula::ErrorCode::SUCCEEDED) {
@@ -103,6 +111,7 @@ struct Buffer {
   }
 
   void add(const ITEM &item) {
+    LOG(INFO) << "Buffer added an item: " << item.vid << item.toString();
     items_.emplace_back(item);
     if (items_.size() >= capacity_) {
       flush_();
@@ -175,7 +184,7 @@ public:
 
   thread_local_nebula_writer(const std::string &path) {
     Configs configs(path, "nebula:");
-    std::string graph_server_addrs, user, password, mode, space, tag, props, retry, err_file;
+    std::string graph_server_addrs, user, password, mode, space, tag, props, batch_size, retry, err_file;
     CHECK((graph_server_addrs = configs.get("graph_server_addrs")) != "")
         << "graph_server_addrs doesn't exist.";
     CHECK((user = configs.get("user")) != "") << "user doesn't exist.";
@@ -185,6 +194,7 @@ public:
     CHECK((mode = configs.get("mode")) != "") << "props doesn't exist.";
     CHECK((tag = configs.get("tag")) != "") << "tag doesn't exist.";
     CHECK((props = configs.get("props")) != "") << "props doesn't exist.";
+    CHECK((batch_size = configs.get("batch_size")) != "") << "batch_size doesn't exist.";
     CHECK((retry = configs.get("retry")) != "") << "retry doesn't exist.";
     CHECK((err_file = configs.get("err_file")) != "") << "err_file doesn't exist.";
 
@@ -195,6 +205,9 @@ public:
     std::vector<std::string> tagProps;
     boost::split(tagProps, props, boost::is_any_of(","),
                  boost::token_compress_on);
+
+    auto batchSize = strtoul(batch_size.c_str(), nullptr, 10);
+    CHECK(batchSize > 0) << "batch_size: " << batchSize << " should be positive";
 
     auto &cluster_info = cluster_info_t::get_instance();
 
@@ -209,6 +222,7 @@ public:
     nebula_writer_configs_detail::mode_ = mode;
     nebula_writer_configs_detail::tag_ = tag;
     nebula_writer_configs_detail::props_ = tagProps;
+    nebula_writer_configs_detail::batch_size_ = batchSize;
     nebula_writer_configs_detail::retry_ = stoi(retry);
     nebula_writer_configs_detail::err_file_ = err_file;
 
@@ -230,7 +244,7 @@ public:
           result = session->execute(stmt);
           CHECK(check_response(result, stmt));
 
-          auto *buff_ = new Buffer<ITEM>(1000, session);
+          auto *buff_ = new Buffer<ITEM>(nebula_writer_configs_detail::batch_size_, session);
 
           return (void *)buff_;
         });

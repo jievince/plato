@@ -182,6 +182,19 @@ private:
   EdgeData default_value_;
 };
 
+
+template <typename VID_T, typename = typename std::enable_if<std::is_integral<VID_T>::value>::type>
+VID_T convert_and_check(char* pToken) {
+  auto vid = strtoul(pToken, nullptr, 10);
+  CHECK(vid <= std::numeric_limits<VID_T>::max()) << "vid: " << vid << " exceed max value";
+  return vid;
+}
+
+template <typename VID_T, typename = typename std::enable_if<!std::is_integral<VID_T>::value>::type>
+char* convert_and_check(char* pToken) {
+  return pToken;
+}
+
 /*
  * \brief edge_parser_t,  parse from input stream, call user provide function when buffer if full
  *                        edge_parser_t must be reentrant
@@ -249,9 +262,11 @@ ssize_t csv_parser(STREAM_T& fin, blockcallback_t<EdgeData, VID_T> callback, dec
       LOG(WARNING) << boost::format("can not extract source from (%s)") % pLog;
       continue;
     }
+  
+    // auto src = strtoul(pToken, nullptr, 10);
+    // CHECK(src <= std::numeric_limits<VID_T>::max()) << "src: " << src << " exceed max value";
 
-    auto src = strtoul(pToken, nullptr, 10);
-    CHECK(src <= std::numeric_limits<VID_T>::max()) << "src: " << src << " exceed max value";
+    auto src = convert_and_check<VID_T>(pToken);
     buffer[count].src_ = src;
 
     pLog = pToken;
@@ -261,8 +276,10 @@ ssize_t csv_parser(STREAM_T& fin, blockcallback_t<EdgeData, VID_T> callback, dec
       continue;
     }
 
-    auto dst = strtoul(pToken, nullptr, 10);
-    CHECK(dst <= std::numeric_limits<VID_T>::max()) << "dst: " << dst << " exceed max value";
+    // auto dst = strtoul(pToken, nullptr, 10);
+    // CHECK(dst <= std::numeric_limits<VID_T>::max()) << "dst: " << dst << " exceed max value";
+
+    auto dst = convert_and_check<VID_T>(pToken);
     buffer[count].dst_ = dst;
 
     if (3 == valid_splits) {

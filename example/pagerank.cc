@@ -216,25 +216,46 @@ void run_pagerank() {
         }
       );
     } else {
-      struct Item {
-        VID_T vid;
-        double pval;
-        std::string toString() const {
-          return std::to_string(pval);
-        }
-      };
-      plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
-      curt_rank->template foreach<int> (
-        [&](plato::vid_t v_i, double* pval) {
-          auto& buffer = writer.local();
-          if (encoder_ptr != nullptr) {
-            buffer.add(Item{encoder_ptr->decode(v_i), *pval});
-          } else {
-            buffer.add(Item{v_i, *pval});
+      if (encoder_ptr != nullptr) {
+        struct Item {
+          VID_T vid;
+          double pval;
+          std::string toString() const {
+            return std::to_string(pval);
           }
-          return 0;
-        }
-      );
+        };
+        plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
+        LOG(INFO) << "thread_local_nebula_writer is constructed....";
+        curt_rank->template foreach<int> (
+          [&](plato::vid_t v_i, double* pval) {
+            auto& buffer = writer.local();
+            LOG(INFO) << "try to add an item: " << "v_i" << ":" << v_i;
+            LOG(INFO) << "*pval: " << *pval;
+
+            auto a = encoder_ptr->decode(v_i);
+            LOG(INFO) << "decoded v_i: " << a;
+            LOG(INFO) << "has decoded";
+            buffer.add(Item{encoder_ptr->decode(v_i), *pval});
+            return 0;
+          }
+        );
+      } else {
+        struct Item {
+          plato::vid_t vid;
+          double pval;
+          std::string toString() const {
+            return std::to_string(pval);
+          }
+        };
+        plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
+        curt_rank->template foreach<int> (
+          [&](plato::vid_t v_i, double* pval) {
+            auto& buffer = writer.local();
+            buffer.add(Item{v_i, *pval});
+            return 0;
+          }
+        );
+      }
     }
   }
   if (0 == cluster_info.partition_id_) {
@@ -263,9 +284,9 @@ int main(int argc, char** argv) {
   } else if (FLAGS_vtype == "int64") {
     run_pagerank<int64_t>();
   }
-  // else if (FLAGS_vtype == "string") {
-  //   run_pagerank<std::string>();
-  // }
+  else if (FLAGS_vtype == "string") {
+    run_pagerank<std::string>();
+  }
   else {
     LOG(FATAL) << "unknown vtype: " << FLAGS_vtype;
   }
