@@ -113,7 +113,7 @@ template <typename ITEM> struct Buffer {
   }
 
   void add(const ITEM &item) {
-    LOG(INFO) << "Buffer added an item: " << item.vid << item.toString();
+    //LOG(INFO) << "Buffer added an item: " << item.vid << item.toString();
     items_.emplace_back(item);
     if (items_.size() >= capacity_) {
       flush_();
@@ -222,6 +222,8 @@ public:
     LOG(INFO) << "waiting for schema to load into cache...";
     poll(nullptr, 0, 10000); // wait for 10s
     LOG(INFO) << "schema loaded into cache!";
+
+    LOG(INFO) << "writeBatchSize: " << writeBatchSize;
 
     nebula_writer_configs_detail::user_ = user;
     nebula_writer_configs_detail::password_ = password;

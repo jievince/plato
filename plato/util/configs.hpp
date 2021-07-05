@@ -50,7 +50,7 @@ struct Configs {
     LOG(INFO) << "Configs: " << realPath;
     while (fin.good() && (false == fin.eof())) {
       std::getline(fin, line);
-      LOG(INFO) << "line: " << line;
+      //LOG(INFO) << "line: " << line;
       if (boost::starts_with(line, "--")) {
         posEqual = line.find('=');
         if (posEqual == std::string::npos || posEqual == line.size() - 1) {
@@ -63,7 +63,7 @@ struct Configs {
         key = trim(line.substr(2, posEqual - 2));
         val = trim(line.substr(posEqual + 1));
         configs_[key] = val;
-        LOG(INFO) << "[" << key << "]=" << val;
+        //LOG(INFO) << "[" << key << "]=" << val;
       } else if (boost::starts_with(line, "#")) {
         ;
       }

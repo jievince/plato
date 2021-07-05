@@ -96,14 +96,22 @@ struct edge_unit_t {
   }
 };// __attribute__((packed));
 
-// template<typename VID_T>
-// struct edge_unit_t<empty_t, VID_T> {
-//   VID_T src_;
-//   union {
-//     VID_T dst_;
-//     empty_t edata_;
-//   };
-// };// __attribute__((packed));
+template <>
+struct edge_unit_t<empty_t, std::string> {
+  std::string src_;
+  std::string dst_;
+  empty_t edata_;
+};// __attribute__((packed));
+
+template<typename VID_T>
+struct edge_unit_t<empty_t, VID_T> {
+  VID_T src_;
+  union {
+    VID_T dst_;
+    empty_t edata_;
+  };
+};// __attribute__((packed));
+
 
 template <typename EDATA_T>
 struct adj_unit_t {

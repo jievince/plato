@@ -201,7 +201,7 @@ void run_pagerank() {
   }
 
   watch.mark("t1");
-  {  // save result to hdfs
+  {
     if (!boost::starts_with(FLAGS_output, "nebula:")) {
       plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
       curt_rank->template foreach<int> (
@@ -229,12 +229,6 @@ void run_pagerank() {
         curt_rank->template foreach<int> (
           [&](plato::vid_t v_i, double* pval) {
             auto& buffer = writer.local();
-            LOG(INFO) << "try to add an item: " << "v_i" << ":" << v_i;
-            LOG(INFO) << "*pval: " << *pval;
-
-            auto a = encoder_ptr->decode(v_i);
-            LOG(INFO) << "decoded v_i: " << a;
-            LOG(INFO) << "has decoded";
             buffer.add(Item{encoder_ptr->decode(v_i), *pval});
             return 0;
           }
@@ -265,7 +259,7 @@ void run_pagerank() {
   plato::mem_status_t mstatus;
   plato::self_mem_usage(&mstatus);
   LOG(INFO) << "memory usage: " << (double)mstatus.vm_rss / 1024.0 << " MBytes";
-
+  LOG(INFO) << "pagerank done const: " << watch.show("t0") / 1000.0 << "s";
 }
 
 int main(int argc, char** argv) {

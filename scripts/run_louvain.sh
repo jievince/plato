@@ -7,10 +7,11 @@ MAIN="./bazel-bin/example/fast_unfolding_simple" # process name
 WNUM=3
 WCORES=8
 
-#INPUT=${INPUT:="$PROJECT/data/graph/v100_e2150_ua_c3.csv"}
-INPUT=${INPUT:="nebula:${PROJECT}/scripts/nebula.conf"}
+INPUT=${INPUT:="$PROJECT/data/graph/non_coding_5_7_weighted.csv"}
+#INPUT=${INPUT:="nebula:${PROJECT}/scripts/nebula.conf"}
 #OUTPUT=${OUTPUT:='hdfs://192.168.8.149:9000/_test/output'}
-OUTPUT=${OUTPUT:="nebula:$PROJECT/scripts/nebula.conf"}
+#OUTPUT=${OUTPUT:="nebula:$PROJECT/scripts/nebula.conf"}
+OUTPUT=${OUTPUT:="/tmp/pagerank"}
 IS_DIRECTED=${IS_DIRECTED:=true}  # let plato auto add reversed edge or not
 NEED_ENCODE=${NEED_ENCODE:=true}
 

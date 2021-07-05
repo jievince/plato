@@ -387,6 +387,7 @@ ssize_t nebula_scanner(nebula::StorageClient &client, std::string &spaceName,
   if (valid_splits == 3 && !edgeDataField.empty()) {
     propNames.emplace_back(edgeDataField);
   }
+  LOG(INFO) << "readBatchSize: " << readBatchSize;
   auto scanIter = client.scanEdgeWithPart(spaceName,
                                           partID,
                                           edgeName,
