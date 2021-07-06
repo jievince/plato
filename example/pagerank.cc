@@ -46,9 +46,9 @@
 
 DEFINE_string(input,       "",      "input file, in csv format, without edge data");
 DEFINE_string(output,      "",      "output directory");
-DEFINE_string(vtype,       "uint32",                 "");
 DEFINE_bool(is_directed,   false,   "is graph directed or not");
 DEFINE_bool(need_encode,   false,                    "");
+DEFINE_string(vtype,       "uint32",                 "");
 DEFINE_bool(part_by_in,    false,   "partition by in-degree");
 DEFINE_int32(alpha,        -1,      "alpha value used in sequence balance partition");
 DEFINE_uint64(iterations,  100,     "number of iterations");
@@ -79,7 +79,6 @@ void run_pagerank() {
   watch.mark("t0");
 
   plato::distributed_vid_encoder_t<plato::empty_t, VID_T> data_encoder;
-
   auto encoder_ptr = &data_encoder;
   if (!FLAGS_need_encode) encoder_ptr = nullptr;
 
@@ -277,11 +276,9 @@ int main(int argc, char** argv) {
     run_pagerank<uint64_t>();
   } else if (FLAGS_vtype == "int64") {
     run_pagerank<int64_t>();
-  }
-  else if (FLAGS_vtype == "string") {
+  } else if (FLAGS_vtype == "string") {
     run_pagerank<std::string>();
-  }
-  else {
+  } else {
     LOG(FATAL) << "unknown vtype: " << FLAGS_vtype;
   }
 

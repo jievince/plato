@@ -41,7 +41,7 @@ public:
    * @brief
    * @param opts
    */
-  vid_encoder_t(const vid_encoder_opts_t& opts = vid_encoder_opts_t()): opts_(opts) {}
+  vid_encoder_t() {}
 
   /**
    * @brief encode
@@ -70,7 +70,6 @@ public:
 
 private:
   std::vector<VID_T> global_ids_;
-  vid_encoder_opts_t opts_;
 };
 
 template <typename EDATA, typename VID_T, template<typename, typename> class CACHE>
@@ -98,17 +97,17 @@ void vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>& cache,
     spread_message<VID_T, vid_t>(
       cache,
       [&](const push_context_t& context, size_t i, edge_unit_spec_t *edge) {
-        if (opts_.src_need_encode_) {
+        {
           bool upserted = used.upsert(edge->src_, [](vid_t&){}, 0);
           if (upserted) {
-            auto send_to = murmur_hash2(&(edge->src_), sizeof(VID_T)) % cluster_info.partitions_;
+            auto send_to = murmur_hash2(addr(edge->src_), size(edge->src_)) % cluster_info.partitions_;
             context.send(send_to, edge->src_);
           }
         }
-        if (opts_.dst_need_encode_) {
+        {
           bool upserted = used.upsert(edge->dst_, [](vid_t&){}, 0);
           if (upserted) {
-            auto send_to = murmur_hash2(&(edge->dst_), sizeof(VID_T)) % cluster_info.partitions_;
+            auto send_to = murmur_hash2(addr(edge->dst_), size(edge->dst_)) % cluster_info.partitions_;
             context.send(send_to, edge->dst_);
           }
         }
@@ -163,7 +162,7 @@ void vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>& cache,
   watch.mark("t1");
   cuckoomap_t id_table(vertex_size * 1.2);
   #pragma omp parallel for num_threads(cluster_info.threads_)
-  for (vid_t i = 0; i < vertex_size; ++i) {
+  for (vid_t i = 0; i < vertex_size; ++i) { 
     id_table.upsert(global_ids_[i], [](vid_t&){ }, i);
   }
 
@@ -186,10 +185,8 @@ void vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>& cache,
       [&](size_t /*idx*/, edge_unit_spec_t* edge) {
         items[k].edata_ = edge->edata_;
         //LOG(INFO) << "pid: " << cluster_info.partition_id_ << " src: "  << item.src_ << " dst: " << item.dst_;
-        if (opts_.src_need_encode_) items[k].src_ = lock_table->at(edge->src_);
-        else items[k].src_ = edge->src_;
-        if (opts_.dst_need_encode_) items[k].dst_ = lock_table->at(edge->dst_);
-        else items[k].dst_ = edge->dst_;
+        items[k].src_ = lock_table->at(edge->src_);
+        items[k].dst_ = lock_table->at(edge->dst_);
 
         k++;
         if (k == HUGESIZE) {

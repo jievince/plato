@@ -40,6 +40,7 @@
 
 DEFINE_string(input,       "",      "input file, in csv format, without edge data");
 DEFINE_string(output,      "",      "output directory");
+DEFINE_string(vtype,       "uint32",                 "");
 DEFINE_bool(is_directed,   true,    "is graph directed or not");
 DEFINE_bool(need_encode,   false,                    "");
 DEFINE_bool(part_by_in,    true,    "partition by in-degree");
@@ -73,14 +74,10 @@ void print_flags(){
   LOG(INFO) << "hot_att      : " << FLAGS_hop_att;
 }
 
-int main(int argc, char** argv) {
-
+template <typename VID_T>
+void run_hanp() {
   plato::stop_watch_t watch;
   auto& cluster_info = plato::cluster_info_t::get_instance();
-
-  init(argc, argv);
-  cluster_info.initialize(&argc, &argv);
-
   if (0 == cluster_info.partition_id_) {
     print_flags();
   }
@@ -88,19 +85,19 @@ int main(int argc, char** argv) {
 
   using edge_value_t = float;
 
-  plato::distributed_vid_encoder_t<edge_value_t> data_encoder;
+  plato::distributed_vid_encoder_t<edge_value_t, VID_T> data_encoder;
 
   auto encoder_ptr = &data_encoder;
   if (!FLAGS_need_encode) encoder_ptr = nullptr;
 
   plato::graph_info_t graph_info(FLAGS_is_directed);
 
-  auto pdcsc = plato::create_dcsc_seqd_from_path<edge_value_t>(
+  auto pdcsc = plato::create_dcsc_seqd_from_path<edge_value_t, VID_T>(
     &graph_info, FLAGS_input, plato::edge_format_t::CSV,
     plato::float_decoder, FLAGS_alpha, FLAGS_part_by_in, encoder_ptr
   );
 
-  using graph_spec_t = std::remove_reference<decltype(*pdcsc)>::type;
+  using graph_spec_t = typename std::remove_reference<decltype(*pdcsc)>::type;
 
   plato::algo::hanp_opts_t opts;
   opts.iteration_ = FLAGS_iterations;
@@ -131,31 +128,65 @@ int main(int argc, char** argv) {
         }
       );
     } else {
-      struct Item {
-        plato::vid_t vid;
-        plato::vid_t pval;
-        std::string toString() const {
-          return std::to_string(pval);
-        }
-      };
-      plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
-      labels.template foreach<int> (
-        [&](plato::vid_t v_i, plato::vid_t* pval) {
-          auto& buffer = writer.local();
-          if (encoder_ptr != nullptr) {
-            buffer.add(Item{encoder_ptr->decode(v_i), *pval});
-          } else {
-            buffer.add(Item{v_i, *pval});
+      if (encoder_ptr != nullptr) {
+        struct Item {
+          VID_T vid;
+          plato::vid_t pval;
+          std::string toString() const {
+            return std::to_string(pval);
           }
-
-          return 0;
-        }
-      );
+        };
+        plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
+        labels.template foreach<int> (
+          [&](plato::vid_t v_i, plato::vid_t* pval) {
+            auto& buffer = writer.local();
+            buffer.add(Item{encoder_ptr->decode(v_i), *pval});
+            return 0;
+          }
+        );
+      } else {
+        struct Item {
+          plato::vid_t vid;
+          plato::vid_t pval;
+          std::string toString() const {
+            return std::to_string(pval);
+          }
+        };
+        plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
+        labels.template foreach<int> (
+          [&](plato::vid_t v_i, plato::vid_t* pval) {
+            auto& buffer = writer.local();
+            buffer.add(Item{v_i, *pval});
+            return 0;
+          }
+        );
+      }
     }
   }
 
   if (0 == cluster_info.partition_id_) {
     LOG(INFO) << "save result cost: " << watch.show("t1") / 1000.0 << "s";
+  }
+}
+
+int main(int argc, char** argv) {
+  auto& cluster_info = plato::cluster_info_t::get_instance();
+  init(argc, argv);
+  cluster_info.initialize(&argc, &argv);
+
+  if (FLAGS_vtype == "uint32") {
+    run_hanp<uint32_t>();
+  } else if (FLAGS_vtype == "int32")  {
+    run_hanp<int32_t>();
+  } else if (FLAGS_vtype == "uint64") {
+    run_hanp<uint64_t>();
+  } else if (FLAGS_vtype == "int64") {
+    run_hanp<int64_t>();
+  } else if (FLAGS_vtype == "string") {
+    run_hanp<std::string>();
+  }
+  else {
+    LOG(FATAL) << "unknown vtype: " << FLAGS_vtype;
   }
 
   return 0;

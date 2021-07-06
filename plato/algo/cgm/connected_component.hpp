@@ -35,6 +35,7 @@
 
 #include "plato/util/perf.hpp"
 #include "plato/util/atomic.hpp"
+#include "plato/util/nebula_writer.h"
 #include "plato/graph/graph.hpp"
 #include "plato/engine/dualmode.hpp"
 
@@ -90,30 +91,10 @@ public:
    * @brief
    * @tparam VID_T
    * @param prefix
-   * @param label
-   * @param vid_encoder
-   */
-  template <typename VID_T>
-  void write_component(const std::string& prefix, VID_T label, vencoder_t<edata_t, VID_T> vid_encoder = nullptr);
-
-  /**
-   * @brief
-   * @tparam VID_T
-   * @param prefix
    * @param vid_encoder
    */
   template <typename VID_T>
   void write_all_vertices(const std::string& prefix, vencoder_t<edata_t, VID_T> vid_encoder = nullptr);
-
-
-  /**
-   * @brief
-   * @tparam VID_T
-   * @param prefix
-   * @param vid_encoder
-   */
-  template <typename VID_T>
-  void write_all_edges(const std::string& prefix, vencoder_t<edata_t, VID_T> vid_encoder = nullptr);
 
   /**
    * @brief
@@ -387,90 +368,6 @@ std::string connected_component_t<INCOMING, OUTGOING>::get_summary(
 
 template <typename INCOMING, typename OUTGOING>
 template <typename VID_T>
-void connected_component_t<INCOMING, OUTGOING>::write_component(
-  const std::string& prefix, VID_T target_label, vencoder_t<edata_t, VID_T> vid_encoder) {
-  
-  LOG(INFO) << "@@@@@@@@@@ write_component";
-
-  auto& cluster_info = plato::cluster_info_t::get_instance();
-  vid_t actual_label = graph_info_.vertices_;
-  if (vid_encoder != nullptr && target_label != (VID_T)-1) {
-    //need trans to encoded id
-    vid_t tmp = graph_info_.vertices_;
-    #pragma omp parallel num_threads(cluster_info.threads_)
-    for (vid_t i = 0; i < graph_info_.vertices_; ++i) {
-      if (vid_encoder->decode(i) == target_label) {
-        tmp = i; 
-      }
-    }
-    actual_label = tmp;
-  } else {
-    if (target_label == (VID_T)-1) {
-      actual_label = major_label_;
-    } else {
-      actual_label = (vid_t)target_label;
-    }
-  }
-
-  if (actual_label >= graph_info_.vertices_) {
-    return;
-  }
-
-  thread_local_fs_output os(prefix, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
-
-  if (actual_label != (vid_t)-1 && 
-      global_label_info_.find(actual_label) == global_label_info_.end()) {
-    //not a component id, regard as vertex id and try to find its component id  
-    vid_t tmp = graph_info_.vertices_;
-    if (engine_->in_edges()->partitioner()->get_partition_id(actual_label)
-        == cluster_info.partition_id_) {
-      tmp = labels_[actual_label];
-    }
-    MPI_Allreduce(MPI_IN_PLACE, &tmp, 1, get_mpi_data_type<vid_t>(), MPI_MIN, MPI_COMM_WORLD);
-    actual_label = tmp;
-  }
-
-  auto output_result = [&](vid_t src, vid_t dst) {
-    auto& fs_output = os.local();
-    if (vid_encoder != nullptr) {
-      // LOG(INFO) << src << "," << dst << " --> " << vid_encoder->decode(src) << "," << vid_encoder->decode(dst);
-      fs_output << vid_encoder->decode(src) << "," << vid_encoder->decode(dst) << "\n";
-    } else {
-      // LOG(INFO) << src << "," << dst;
-      fs_output << src << "," << dst << "\n";
-    }
-  };
-
-  using adj_unit_list_spec_t = typename INCOMING::adj_unit_list_spec_t;
-  auto traversal = [&](vid_t v_i, const adj_unit_list_spec_t& adjs) {
-    for (auto it = adjs.begin_; adjs.end_ != it; ++it) {
-      vid_t src = it->neighbour_;
-      vid_t src_label = labels_[src];
-      if (src_label == actual_label) {
-        if (!graph_info_.is_directed_) {
-          if (src < v_i) {
-            output_result(src, v_i);
-          } 
-        }
-        else {
-          output_result(src, v_i);
-        }
-      }
-    }
-    return true;
-  };
-
-  engine_->in_edges()->reset_traversal();
-  #pragma omp parallel num_threads(cluster_info.threads_)
-  {
-    size_t chunk_size = 256;
-    while (engine_->in_edges()->next_chunk(traversal, &chunk_size)) { }
-  }
-
-}
-
-template <typename INCOMING, typename OUTGOING>
-template <typename VID_T>
 void connected_component_t<INCOMING, OUTGOING>::write_all_vertices(const std::string& prefix, 
     vencoder_t<edata_t, VID_T> vid_encoder) {
 
@@ -479,65 +376,53 @@ void connected_component_t<INCOMING, OUTGOING>::write_all_vertices(const std::st
   auto active_view = plato::create_active_v_view(engine_->out_edges()->partitioner()->self_v_view(), actives);
 
   auto& cluster_info = plato::cluster_info_t::get_instance();
-  thread_local_fs_output os(prefix, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
 
-  auto output_result = [&](vid_t v) {
-    auto& fs_output = os.local();
-    if (vid_encoder != nullptr) {
-      fs_output << vid_encoder->decode(v) << "," << vid_encoder->decode(labels_[v]) << "\n";
-    } else {
-      fs_output << v << "," << labels_[v] << "\n";
-    }
-  };
+  if (!boost::starts_with(prefix, "nebula:")) {
+    thread_local_fs_output os(prefix, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
 
-  active_view.template foreach<vid_t>([&](vid_t v_i) {
-    output_result(v_i);
-    return 0;
-  });
-
-}
-
-template <typename INCOMING, typename OUTGOING>
-template <typename VID_T>
-void connected_component_t<INCOMING, OUTGOING>::write_all_edges(const std::string& prefix, 
-    vencoder_t<edata_t, VID_T> vid_encoder) {
-
-  auto& cluster_info = plato::cluster_info_t::get_instance();
-  thread_local_fs_output os(prefix, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
-
-  auto output_result = [&](vid_t label, vid_t src, vid_t dst) {
-    auto& fs_output = os.local();
-    if (vid_encoder != nullptr) {
-      fs_output << vid_encoder->decode(label) << "," << 
-          vid_encoder->decode(src) << "," << vid_encoder->decode(dst) << "\n";
-    } else {
-      fs_output << label << "," << src << "," << dst << "\n";
-    }
-  };
-
-  using adj_unit_list_spec_t = typename INCOMING::adj_unit_list_spec_t;
-  auto traversal = [&](vid_t v_i, const adj_unit_list_spec_t& adjs) {
-    for (auto it = adjs.begin_; adjs.end_ != it; ++it) {
-      vid_t src = it->neighbour_;
-      vid_t src_label = labels_[src];
-      if (!graph_info_.is_directed_) {
-        if (src < v_i) {
-          output_result(src_label, src, v_i);
-        } 
+    auto output_result = [&](vid_t v) {
+      auto& fs_output = os.local();
+      if (vid_encoder != nullptr) {
+        fs_output << vid_encoder->decode(v) << "," << vid_encoder->decode(labels_[v]) << "\n";
+      } else {
+        fs_output << v << "," << labels_[v] << "\n";
       }
-      else {
-        output_result(src_label, src, v_i);
-      }
-      
-    }
-    return true;
-  };
+    };
 
-  engine_->in_edges()->reset_traversal();
-  #pragma omp parallel num_threads(cluster_info.threads_)
-  {
-    size_t chunk_size = 256;
-    while (engine_->in_edges()->next_chunk(traversal, &chunk_size)) { }
+    active_view.template foreach<vid_t>([&](vid_t v_i) {
+      output_result(v_i);
+      return 0;
+    });
+  } else {
+    if (vid_encoder != nullptr) {
+      struct Item {
+        VID_T vid;
+        VID_T label;
+        std::string toString() const {
+          return std::to_string(label);
+        }
+      };
+      plato::thread_local_nebula_writer<Item> writer(prefix);
+      active_view.template foreach<vid_t>([&](vid_t v_i) {
+        auto& buffer = writer.local();
+        buffer.add(Item{vid_encoder->decode(v_i), vid_encoder->decode(labels_[v_i])});
+        return 0;
+      });
+    } else {
+      struct Item {
+        plato::vid_t vid;
+        plato::vid_t label;
+        std::string toString() const {
+          return std::to_string(label);
+        }
+      };
+      plato::thread_local_nebula_writer<Item> writer(prefix);
+      active_view.template foreach<vid_t>([&](vid_t v_i) {
+        auto& buffer = writer.local();
+        buffer.add(Item{v_i, labels_[v_i]});
+        return 0;
+      });
+    }
   }
 }
 

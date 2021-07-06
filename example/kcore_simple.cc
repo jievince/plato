@@ -51,6 +51,7 @@ DEFINE_uint32(kmax,      1000000,      "calculate the k-Core for k the range [km
                                         only take effect when type is subgraph.");
 DEFINE_bool(is_directed, true,         "if set to false, system will add reversed edges automatically");
 DEFINE_bool(need_encode,   false,                    "");
+DEFINE_string(vtype,       "uint32",                 "");
 DEFINE_int32(alpha,      -1,           "alpha value used in sequence balance partition");
 DEFINE_bool(part_by_in,  false,        "partition by in-degree");
 
@@ -77,12 +78,10 @@ void init(int argc, char** argv) {
   google::LogToStderr();
 }
 
-int main(int argc, char** argv){
+template <typename VID_T>
+void run_kcore_simple() {
   plato::stop_watch_t watch;
   auto& cluster_info = plato::cluster_info_t::get_instance();
-
-  init(argc, argv);
-  cluster_info.initialize(&argc, &argv);
 
   using namespace plato;
   using namespace plato::algo;
@@ -106,32 +105,64 @@ int main(int argc, char** argv){
     LOG(INFO) << "is_directed: " << FLAGS_is_directed;
   }
 
-  plato::distributed_vid_encoder_t<plato::empty_t> data_encoder;
-
+  plato::distributed_vid_encoder_t<plato::empty_t, VID_T> data_encoder;
   auto encoder_ptr = &data_encoder;
   if (!FLAGS_need_encode) encoder_ptr = nullptr;
 
   plato::graph_info_t graph_info(FLAGS_is_directed);
 
-  auto graph = create_bcsr_seqs_from_path<plato::empty_t>(&graph_info, FLAGS_input, plato::edge_format_t::CSV,
+  auto graph = create_bcsr_seqs_from_path<plato::empty_t, VID_T>(&graph_info, FLAGS_input, plato::edge_format_t::CSV,
       plato::dummy_decoder<plato::empty_t>, FLAGS_alpha, FLAGS_part_by_in, encoder_ptr, false);
 
-  plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
-  auto save_kcore_vertex =
-    [&](vid_t src, vid_t /*dst*/, uint32_t cur_k) {
-      auto& fs_output = os.local();
-      fs_output << src << "," << cur_k << "\n";
-    };
-
-  auto coreness = kcore_algo_t::compute_shell_index(graph_info, *graph, save_kcore_vertex);
+  auto coreness = kcore_algo_t::compute_shell_index(graph_info, *graph);
 
   watch.mark("t0");
   if (kcore_calc_type_t::VERTEX == type_c) {
-    coreness.template foreach<vid_t>(
-      [&](vid_t v_i, vid_t* pcrns) {
-        save_kcore_vertex(v_i, 0, *pcrns);
-        return 0;
-      });
+    if (!boost::starts_with(FLAGS_output, "nebula:")) {
+      plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
+      coreness.template foreach<vid_t>(
+        [&](vid_t v_i, vid_t* pcrns) {
+          auto& fs_output = os.local();
+          if (encoder_ptr != nullptr) {
+            fs_output << encoder_ptr->decode(v_i) << "," << encoder_ptr->decode(*pcrns) << "\n";
+          } else {
+            fs_output << v_i << "," << *pcrns << "\n";
+          }
+          return 0;
+        });
+    } else {
+      if (encoder_ptr != nullptr) {
+        struct Item {
+          VID_T vid;
+          VID_T cur_k;
+          std::string toString() const {
+            return std::to_string(cur_k);
+          }
+        };
+        plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
+        coreness.template foreach<vid_t>(
+          [&](vid_t v_i, vid_t* pcrns) {
+            auto& buffer = writer.local();
+            buffer.add(Item{encoder_ptr->decode(v_i), encoder_ptr->decode(*pcrns)});
+            return 0;
+          });
+      } else {
+        struct Item {
+          plato::vid_t vid;
+          plato::vid_t cur_k;
+          std::string toString() const {
+            return std::to_string(cur_k);
+          }
+        };
+        plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
+        coreness.template foreach<vid_t>(
+          [&](vid_t v_i, vid_t* pcrns) {
+            auto& buffer = writer.local();
+            buffer.add(Item{v_i, *pcrns});
+            return 0;
+          });
+      }
+    }
   } else {
     plato::bitmap_t<> lefted(graph_info.max_v_i_ + 1);
     lefted.fill();
@@ -139,33 +170,126 @@ int main(int argc, char** argv){
     vid_t saved = 0;
     vid_t cur_k = 0;
 
-    while (saved < graph_info.vertices_) {
-      plato::thread_local_fs_output os_sub((boost::format("%s/%u_core") % FLAGS_output % cur_k).str(), (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
+    if (!boost::starts_with(FLAGS_output, "nebula:")) {
+      while (saved < graph_info.vertices_) {
+        plato::thread_local_fs_output os_sub((boost::format("%s/%u_core") % FLAGS_output % cur_k).str(), (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
 
-      auto save_kcore_subgraph =
-        [&](vid_t src, vid_t dst, uint32_t cur_k) {
-          auto& fs_output = os_sub.local();
-          fs_output << src << "," << dst << "\n";
-        };
-
-      coreness.template foreach<vid_t>(
-        [&](vid_t v_i, vid_t* pcrns) {
-          if (*pcrns == cur_k) {
-            auto adjs = graph->neighbours(v_i);
-            for (auto it = adjs.begin_; it != adjs.end_; ++it) {
-              save_kcore_subgraph(v_i, it->neighbour_, cur_k);
+        auto save_kcore_subgraph =
+          [&](vid_t src, vid_t dst, uint32_t cur_k) {
+            auto& fs_output = os_sub.local();
+            if (encoder_ptr != nullptr) {
+              fs_output << encoder_ptr->decode(src) << "," << encoder_ptr->decode(dst) << "\n";
+            } else {
+              fs_output << src << "," << dst << "\n";
             }
-            lefted.clr_bit(v_i);
+          };
+
+        coreness.template foreach<vid_t>(
+          [&](vid_t v_i, vid_t* pcrns) {
+            if (*pcrns == cur_k) {
+              auto adjs = graph->neighbours(v_i);
+              for (auto it = adjs.begin_; it != adjs.end_; ++it) {
+                save_kcore_subgraph(v_i, it->neighbour_, cur_k);
+              }
+              lefted.clr_bit(v_i);
+            }
+            return 0;
+          }, &lefted);
+        saved = graph_info.max_v_i_ + 1 - lefted.count();
+        MPI_Allreduce(MPI_IN_PLACE, &saved, 1, get_mpi_data_type<vid_t>(), MPI_SUM, MPI_COMM_WORLD);
+        ++cur_k;
+      }
+    } else {
+      if (encoder_ptr != nullptr) {
+        struct Item {
+          VID_T vid;
+          VID_T dst;
+          std::string toString() const {
+            return std::to_string(dst);
           }
-          return 0;
-        }, &lefted);
-      saved = graph_info.max_v_i_ + 1 - lefted.count();
-      MPI_Allreduce(MPI_IN_PLACE, &saved, 1, get_mpi_data_type<vid_t>(), MPI_SUM, MPI_COMM_WORLD);
-      ++cur_k;
+        };
+        while (saved < graph_info.vertices_) {
+          plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
+
+          auto save_kcore_subgraph =
+            [&](vid_t src, vid_t dst, uint32_t cur_k) {
+              auto& buffer = writer.local();
+              buffer.add(Item{encoder_ptr->decode(src), encoder_ptr->decode(dst)});
+            };
+
+          coreness.template foreach<vid_t>(
+            [&](vid_t v_i, vid_t* pcrns) {
+              if (*pcrns == cur_k) {
+                auto adjs = graph->neighbours(v_i);
+                for (auto it = adjs.begin_; it != adjs.end_; ++it) {
+                  save_kcore_subgraph(v_i, it->neighbour_, cur_k);
+                }
+                lefted.clr_bit(v_i);
+              }
+              return 0;
+            }, &lefted);
+          saved = graph_info.max_v_i_ + 1 - lefted.count();
+          MPI_Allreduce(MPI_IN_PLACE, &saved, 1, get_mpi_data_type<vid_t>(), MPI_SUM, MPI_COMM_WORLD);
+          ++cur_k;
+        }
+      } else {
+        struct Item {
+          plato::vid_t vid;
+          plato::vid_t dst;
+          std::string toString() const {
+            return std::to_string(dst);
+          }
+        };
+        while (saved < graph_info.vertices_) {
+          plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
+
+          auto save_kcore_subgraph =
+            [&](vid_t src, vid_t dst, uint32_t cur_k) {
+              auto& buffer = writer.local();
+              buffer.add(Item{src, dst});
+            };
+
+          coreness.template foreach<vid_t>(
+            [&](vid_t v_i, vid_t* pcrns) {
+              if (*pcrns == cur_k) {
+                auto adjs = graph->neighbours(v_i);
+                for (auto it = adjs.begin_; it != adjs.end_; ++it) {
+                  save_kcore_subgraph(v_i, it->neighbour_, cur_k);
+                }
+                lefted.clr_bit(v_i);
+              }
+              return 0;
+            }, &lefted);
+          saved = graph_info.max_v_i_ + 1 - lefted.count();
+          MPI_Allreduce(MPI_IN_PLACE, &saved, 1, get_mpi_data_type<vid_t>(), MPI_SUM, MPI_COMM_WORLD);
+          ++cur_k;
+        }
+      }
     }
   }
   if (0 == cluster_info.partition_id_) {
     LOG(INFO) << "all done, saving result cost: " << watch.showlit_seconds("t0");
+  }
+}
+
+int main(int argc, char** argv) {
+  auto& cluster_info = plato::cluster_info_t::get_instance();
+
+  init(argc, argv);
+  cluster_info.initialize(&argc, &argv);
+
+  if (FLAGS_vtype == "uint32") {
+    run_kcore_simple<uint32_t>();
+  } else if (FLAGS_vtype == "int32")  {
+    run_kcore_simple<int32_t>();
+  } else if (FLAGS_vtype == "uint64") {
+    run_kcore_simple<uint64_t>();
+  } else if (FLAGS_vtype == "int64") {
+    run_kcore_simple<int64_t>();
+  } else if (FLAGS_vtype == "string") {
+    run_kcore_simple<std::string>();
+  } else {
+    LOG(FATAL) << "unknown vtype: " << FLAGS_vtype;
   }
 
   return 0;

@@ -52,7 +52,7 @@ namespace nebula_writer_configs_detail {
 
 static std::string user_;
 static std::string password_;
-static std::string write_space_;
+static std::string space_;
 static std::string mode_;
 static int retry_;
 static std::string err_file_;
@@ -88,6 +88,7 @@ template <typename ITEM> struct Buffer {
     flush_ = [&]() {
       LOG(INFO) << "flush_, items_.size()=" << items_.size();
       auto stmt = genStmt();
+      LOG(INFO) << "stmt: " << stmt;
       CHECK(!!session_) << "session_ is nullptr";
       int retry = nebula_writer_configs_detail::retry_;
       while (retry--) {
@@ -181,14 +182,14 @@ public:
 
   thread_local_nebula_writer(const std::string &path) {
     Configs configs(path, "nebula:");
-    std::string graph_server_addrs, user, password, mode, write_space, tag, prop,
+    std::string graph_server_addrs, user, password, mode, space, tag, prop,
         type, write_batch_size, retry, err_file;
     CHECK((graph_server_addrs = configs.get("graph_server_addrs")) != "")
         << "graph_server_addrs doesn't exist.";
     CHECK((user = configs.get("user")) != "") << "user doesn't exist.";
     CHECK((password = configs.get("password")) != "")
         << "password doesn't exist.";
-    CHECK((write_space = configs.get("write_space")) != "") << "write_space doesn't exist";
+    CHECK((space = configs.get("space")) != "") << "space doesn't exist";
     CHECK((mode = configs.get("mode")) != "") << "mode doesn't exist.";
     CHECK((tag = configs.get("tag")) != "") << "tag doesn't exist.";
     CHECK((prop = configs.get("prop")) != "") << "prop doesn't exist.";
@@ -216,7 +217,7 @@ public:
 
     auto session = pool_->getSession(user, password);
     CHECK(session.valid()) << "session is not valid";
-    auto stmt = "USE " + write_space + ";CREATE TAG IF NOT EXISTS " + tag + "(" + prop + " " + type + ")";
+    auto stmt = "USE " + space + ";CREATE TAG IF NOT EXISTS " + tag + "(" + prop + " " + type + ")";
     auto result = session.execute(stmt);
     CHECK(check_response(result, stmt));
     LOG(INFO) << "waiting for schema to load into cache...";
@@ -227,7 +228,7 @@ public:
 
     nebula_writer_configs_detail::user_ = user;
     nebula_writer_configs_detail::password_ = password;
-    nebula_writer_configs_detail::write_space_ = write_space;
+    nebula_writer_configs_detail::space_ = space;
     nebula_writer_configs_detail::mode_ = mode;
     nebula_writer_configs_detail::tag_ = tag;
     nebula_writer_configs_detail::prop_ = prop;
@@ -245,7 +246,7 @@ public:
       std::string stmt;
       nebula::ExecutionResponse result;
 
-      stmt = "USE " + nebula_writer_configs_detail::write_space_;
+      stmt = "USE " + nebula_writer_configs_detail::space_;
       result = session->execute(stmt);
       CHECK(check_response(result, stmt));
 
@@ -286,9 +287,9 @@ public:
     LOG(INFO) << "finish call ~thread_local_nebula_writer";
   }
 
-  void foreach (std::function<void(const std::string &filename,
-                                   boost::iostreams::filtering_ostream &os)>
-                    reducer){};
+  // void foreach (std::function<void(const std::string &filename,
+  //                                  boost::iostreams::filtering_ostream &os)>
+  //                   reducer){};
 
   [[gnu::always_inline]] [[gnu::hot]] Buffer<ITEM> &local() {
     return *((Buffer<ITEM> *)thread_local_object_detail::get_local_object(id_));

@@ -36,6 +36,7 @@
 
 DEFINE_string(input,       "",     "input file, in csv format, without edge data");
 DEFINE_string(output,      "",     "output directory, store the closeness result");
+DEFINE_string(vtype,       "uint32",                 "");
 DEFINE_bool(is_directed,   false,  "is graph directed or not");
 DEFINE_bool(need_encode,   false,                    "");
 DEFINE_int32(alpha,        -1,     "alpha value used in sequence balance partition");
@@ -50,21 +51,18 @@ void init(int argc, char** argv) {
   google::LogToStderr();
 }
 
-int main(int argc, char** argv) {
+template <typename VID_T>
+void run_bnc_simple() {
   plato::stop_watch_t watch;
   auto& cluster_info = plato::cluster_info_t::get_instance();
 
-  init(argc, argv);
-  cluster_info.initialize(&argc, &argv);
-  LOG(INFO) << "partitions: " << cluster_info.partitions_ << " partition_id: " << cluster_info.partition_id_ << std::endl;
-
-  plato::distributed_vid_encoder_t<plato::empty_t> data_encoder;
+  plato::distributed_vid_encoder_t<plato::empty_t, VID_T> data_encoder;
 
   auto encoder_ptr = &data_encoder;
   if (!FLAGS_need_encode) encoder_ptr = nullptr;
 
   plato::graph_info_t graph_info(FLAGS_is_directed);
-  auto graph = plato::create_dualmode_seq_from_path<plato::empty_t>(&graph_info, FLAGS_input,
+  auto graph = plato::create_dualmode_seq_from_path<plato::empty_t, VID_T>(&graph_info, FLAGS_input,
       plato::edge_format_t::CSV, plato::dummy_decoder<plato::empty_t>,
       FLAGS_alpha, FLAGS_part_by_in, encoder_ptr);
 
@@ -96,27 +94,62 @@ int main(int argc, char** argv) {
       }
     });
   } else {
-    struct Item {
-      plato::vid_t vid;
-      double value;
-      std::string toString() const {
-        return std::to_string(value);
-      }
-    };
-    plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
+    if (encoder_ptr != nullptr) {
+      struct Item {
+        VID_T vid;
+        double value;
+        std::string toString() const {
+          return std::to_string(value);
+        }
+      };
+      plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
 
-    bader.save([&] (plato::vid_t v_i, double value) {
-      auto& buffer = writer.local();
-      if (encoder_ptr != nullptr) {
+      bader.save([&] (plato::vid_t v_i, double value) {
+        auto& buffer = writer.local();
         buffer.add(Item{encoder_ptr->decode(v_i), value});
-      } else {
+      });
+    } else {
+      struct Item {
+        plato::vid_t vid;
+        double value;
+        std::string toString() const {
+          return std::to_string(value);
+        }
+      };
+      plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
+
+      bader.save([&] (plato::vid_t v_i, double value) {
+        auto& buffer = writer.local();
         buffer.add(Item{v_i, value});
-      }
-    });
+      });
+    }
   }
 
   if (0 == cluster_info.partition_id_) {
     LOG(INFO) << "bnc done const: " << watch.show("t0") / 1000.0 << "s";
+  }
+}
+
+int main(int argc, char** argv) {
+  auto& cluster_info = plato::cluster_info_t::get_instance();
+
+  init(argc, argv);
+  cluster_info.initialize(&argc, &argv);
+  LOG(INFO) << "partitions: " << cluster_info.partitions_ << " partition_id: " << cluster_info.partition_id_ << std::endl;
+
+  if (FLAGS_vtype == "uint32") {
+    run_bnc_simple<uint32_t>();
+  } else if (FLAGS_vtype == "int32")  {
+    run_bnc_simple<int32_t>();
+  } else if (FLAGS_vtype == "uint64") {
+    run_bnc_simple<uint64_t>();
+  } else if (FLAGS_vtype == "int64") {
+    run_bnc_simple<int64_t>();
+  } else if (FLAGS_vtype == "string") {
+    run_bnc_simple<std::string>();
+  }
+  else {
+    LOG(FATAL) << "unknown vtype: " << FLAGS_vtype;
   }
 
   return 0;

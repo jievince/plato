@@ -161,9 +161,9 @@ void read_from_nebula(
   nebula_scanner_t<EDATA, VID_T>  scanner = nebula_scanner<EDATA, VID_T>;
 
   Configs configs(path, "nebula:");
-  std::string meta_server_addrs, read_space, edge, edge_data_field, read_batch_size;
+  std::string meta_server_addrs, space, edge, edge_data_field, read_batch_size;
   CHECK((meta_server_addrs = configs.get("meta_server_addrs")) != "") << "meta_server_addrs_val doesn't exist.";
-  CHECK((read_space = configs.get("read_space")) != "") << "read_space doesn't exist";
+  CHECK((space = configs.get("space")) != "") << "space doesn't exist";
   CHECK((edge = configs.get("edge")) != "") << "edge doesn't exist.";
   edge_data_field = configs.get("edge_data_field");
   CHECK((read_batch_size = configs.get("read_batch_size")) != "") << "read_batch_size doesn't exist.";
@@ -178,7 +178,7 @@ void read_from_nebula(
 
   nebula::StorageClient client(metaServers);
 
-  std::vector<int> parts = get_nebula_parts(client, read_space);
+  std::vector<int> parts = get_nebula_parts(client, space);
 
   std::mutex parts_lock;
 
@@ -193,7 +193,7 @@ void read_from_nebula(
         parts.pop_back();
       }
 
-      scanner(client, read_space, partID, edge, edge_data_field, readBatchSize, callback, decoder);
+      scanner(client, space, partID, edge, edge_data_field, readBatchSize, callback, decoder);
     }
   }
 

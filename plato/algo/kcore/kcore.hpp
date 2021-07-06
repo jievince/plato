@@ -66,21 +66,18 @@ public:
    *  IEEE Transactions on parallel and distributed systems, 2012, 24(2): 288-300.
    *
    * \tparam Graph        The graph type, the graph must be partition by destination node
-   * \tparam CALLBACK     The type of callback function
    *
    * \param  graph_info   Graph infomations
    * \param  incomings    Graph edges indexed by destination node
-   * \param  callback     The result callback function
    **/
-  template <typename Graph, typename Callback>
+  template <typename Graph>
   static dense_state_t<vid_t, typename Graph::partition_t>
-  compute_shell_index(const graph_info_t& graph_info, Graph& incomings,
-      Callback&& callback);
+  compute_shell_index(const graph_info_t& graph_info, Graph& incomings);
 };
 
-template <typename Graph, typename Callback>
+template <typename Graph>
 dense_state_t<vid_t, typename Graph::partition_t>
-kcore_algo_t::compute_shell_index(const graph_info_t& graph_info, Graph& incomings, Callback&& callback) {
+kcore_algo_t::compute_shell_index(const graph_info_t& graph_info, Graph& incomings) {
   using partition_t   = typename Graph::partition_t;
   using adj_unit_list_spec_t = typename Graph::adj_unit_list_spec_t;
   using bitmap_spec_t = bitmap_t<>;

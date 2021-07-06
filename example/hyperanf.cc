@@ -33,6 +33,8 @@
 
 DEFINE_string(input,       "",      "input file, in csv format, without edge data");
 DEFINE_bool(is_directed,   false,   "is graph directed or not");
+DEFINE_string(vtype,         "uint32",                 "");
+DEFINE_bool(need_encode,     false,                    "");
 DEFINE_bool(part_by_in,    true,   "partition by in-degree");
 DEFINE_int32(alpha,        -1,      "alpha value used in sequence balance partition");
 DEFINE_uint32(iterations,  20,     "number of iterations");
@@ -51,20 +53,23 @@ void init(int argc, char** argv) {
   google::LogToStderr();
 }
 
-int main(int argc, char** argv) {
+template <typename VID_T>
+void run_hyperanf() {
   //using GRAGH_T = std::pair<bcsr_t<EDATA, sequence_balanced_by_destination_t>,dcsc_t<EDATA, sequence_balanced_by_source_t>>;
   plato::stop_watch_t watch;
-  using bcsr_spec_t = plato::bcsr_t<plato::empty_t, plato::sequence_balanced_by_destination_t>;
-  using dcsc_spec_t = plato::dcsc_t<plato::empty_t, plato::sequence_balanced_by_source_t>;
   auto& cluster_info = plato::cluster_info_t::get_instance();
 
-  init(argc, argv);
-  cluster_info.initialize(&argc, &argv);
+  using bcsr_spec_t = plato::bcsr_t<plato::empty_t, plato::sequence_balanced_by_destination_t>;
+  using dcsc_spec_t = plato::dcsc_t<plato::empty_t, plato::sequence_balanced_by_source_t>;
+
+  plato::distributed_vid_encoder_t<plato::empty_t, VID_T> data_encoder;
+  auto encoder_ptr = &data_encoder;
+  if (!FLAGS_need_encode) encoder_ptr = nullptr;
 
   plato::graph_info_t graph_info(FLAGS_is_directed);
-  auto graph = plato::create_dualmode_seq_from_path<plato::empty_t>(&graph_info, FLAGS_input,
+  auto graph = plato::create_dualmode_seq_from_path<plato::empty_t, VID_T>(&graph_info, FLAGS_input,
       plato::edge_format_t::CSV, plato::dummy_decoder<plato::empty_t>,
-      FLAGS_alpha, FLAGS_part_by_in);
+      FLAGS_alpha, FLAGS_part_by_in, encoder_ptr);
 
   plato::algo::hyperanf_opts_t opts;
   opts.iteration_ = FLAGS_iterations;
@@ -118,6 +123,29 @@ int main(int argc, char** argv) {
   if (0 == cluster_info.partition_id_) {
     LOG(INFO) << "hyperanf done, avg_distance: " << avg_distance << ", cost: "
       << watch.show("t0") / 1000.0 << "s";
+  }
+}
+
+int main(int argc, char** argv) {
+  auto& cluster_info = plato::cluster_info_t::get_instance();
+
+  init(argc, argv);
+  cluster_info.initialize(&argc, &argv);
+
+  if (FLAGS_vtype == "uint32") {
+    run_hyperanf<uint32_t>();
+  } else if (FLAGS_vtype == "int32")  {
+    run_hyperanf<int32_t>();
+  } else if (FLAGS_vtype == "uint64") {
+    run_hyperanf<uint64_t>();
+  } else if (FLAGS_vtype == "int64") {
+    run_hyperanf<int64_t>();
+  }
+  // else if (FLAGS_vtype == "string") {
+  //   run_hyperanf<std::string>();
+  // }
+  else {
+    LOG(FATAL) << "unknown vtype: " << FLAGS_vtype;
   }
 
   return 0;

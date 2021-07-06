@@ -47,36 +47,15 @@ struct vid_to_encode_msg_t {
 
 template <typename VID_T>
 struct vid_encoded_msg_t {
-  VID_T v_i_;
   vid_t encoded_v_i_;
   size_t idx_;
   bool is_src_;
 
   template<typename Ar>
   void serialize(Ar &ar) {
-    ar & v_i_ & encoded_v_i_ & idx_ & is_src_;
+    ar & encoded_v_i_ & idx_ & is_src_;
   }
 };
-
-template<typename VID_T>
-inline typename std::enable_if<std::is_integral<VID_T>::value, size_t>::type size(VID_T) { // could it marked as inline?
-  return sizeof(VID_T);
-}
-
-template<typename VID_T>
-inline typename std::enable_if<!std::is_integral<VID_T>::value, size_t>::type size(VID_T vid) {
-  return vid.size();
-}
-
-template<typename VID_T>
-inline typename std::enable_if<std::is_integral<VID_T>::value, const VID_T*>::type addr(const VID_T& vid) { // could it marked as inline?
-  return &vid;
-}
-
-template<typename VID_T>
-inline typename std::enable_if<!std::is_integral<VID_T>::value, const char*>::type addr(const VID_T& vid) {
-  return vid.c_str();
-}
 
 template<typename VID_T>
 inline typename std::enable_if<std::is_integral<VID_T>::value, uint32_t>::type hash(VID_T vid) { // could it marked as inline?
@@ -89,7 +68,7 @@ inline typename std::enable_if<!std::is_integral<VID_T>::value, uint32_t>::type 
 }
 
 template<typename VID_T>
-inline typename std::enable_if<std::is_integral<VID_T>::value, void>::type mpi_recv(VID_T& vid, int part) { // could it marked as inline?
+inline typename std::enable_if<std::is_integral<VID_T>::value, void>::type mpi_recv(VID_T& vid, int part) {
   MPI_Recv(&vid, sizeof(VID_T), MPI_CHAR, part, Response, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 }
 
@@ -347,7 +326,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T> 
 
     auto recv_req_callback = [&](int p_i, bsp_recv_pmsg_t<vid_to_encode_msg_t<VID_T>>& pmsg) {
       // LOG(INFO) << "------------------__recv: " << "v_i_: " << pmsg->v_i_ << "encoded: " << lock_table->at(pmsg->v_i_) << " idx_: " << pmsg->idx_ << " is_src_: " << pmsg->is_src_ << " from_: " << pmsg->from_;
-      vid_encoded_msg_t<VID_T> encoded_msg{ pmsg->v_i_, lock_table->at(pmsg->v_i_), pmsg->idx_, pmsg->is_src_ };
+      vid_encoded_msg_t<VID_T> encoded_msg{ lock_table->at(pmsg->v_i_), pmsg->idx_, pmsg->is_src_ };
       return encoded_msg;
     };
 

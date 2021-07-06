@@ -11,16 +11,18 @@ WNUM=3
 WCORES=5
 
 # INPUT=${INPUT:="$PROJECT/data/graph/v100_e2150_ua_c3.csv"}
-# INPUT=${INPUT:="nebula:$PROJECT/scripts/nebula.conf"}
+INPUT=${INPUT:="nebula:$PROJECT/scripts/nebula.conf"}
 # INPUT=${INPUT:="$PROJECT/data/graph/non_coding_5_7.csv"}
-INPUT=${INPUT:="$PROJECT/data/graph/raw_graph_10_9.csv"}
-OUTPUT=${OUTPUT:="/tmp/cgm"}
+#INPUT=${INPUT:="$PROJECT/data/graph/raw_graph_10_9.csv"}
+#OUTPUT=${OUTPUT:="/tmp/cgm"}
+OUTPUT=${OUTPUT:="nebula:$PROJECT/scripts/nebula.conf"}
 IS_DIRECTED=${IS_DIRECTED:=false}
 NEED_ENCODE=${NEED_ENCODE:=true}
+VTYPE=${VTYPE:=int64}
 
 # param
 PARAMS+=" --threads ${WCORES}"
-PARAMS+=" --input ${INPUT} --output ${OUTPUT} --is_directed=${IS_DIRECTED}"
+PARAMS+=" --input ${INPUT} --output ${OUTPUT} --is_directed=${IS_DIRECTED} --vtype=${VTYPE}"
 PARAMS+=" --need_encode=${NEED_ENCODE}"
 
 # mpich

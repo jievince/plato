@@ -39,7 +39,6 @@ DEFINE_bool(is_directed,     false,  "is graph directed or not");
 DEFINE_int32(alpha,          -1,     "alpha value used in sequence balance partition");
 DEFINE_int32(label,          -1,     "");
 DEFINE_bool(part_by_in,      false,  "partition by in-degree");
-DEFINE_string(output_method, "sub_graph_by_label",     "");
 DEFINE_string(vtype,         "uint32",                 "");
 DEFINE_bool(need_encode,     false,                    "");
 
@@ -50,14 +49,14 @@ void init(int argc, char** argv) {
 }
 
 template <typename VID_T>
-void run_cgm(bool need_encode) {
+void run_cgm() {
   plato::stop_watch_t watch;
   auto& cluster_info = plato::cluster_info_t::get_instance();
 
   plato::distributed_vid_encoder_t<plato::empty_t, VID_T> data_encoder;
 
   auto encoder_ptr = &data_encoder;
-  if (!need_encode) encoder_ptr = nullptr;
+  if (!FLAGS_need_encode) encoder_ptr = nullptr;
 
   plato::graph_info_t graph_info(FLAGS_is_directed);
   auto graph = plato::create_dualmode_seq_from_path<plato::empty_t, VID_T>(&graph_info, FLAGS_input,
@@ -80,14 +79,7 @@ void run_cgm(bool need_encode) {
     LOG(INFO) << cc.template get_summary<VID_T>(encoder_ptr);
   }
 
-  if (FLAGS_output_method == "sub_graph_by_label") {
-    cc.template write_component<VID_T>(FLAGS_output, FLAGS_label, encoder_ptr);
-  }
-  else if (FLAGS_output_method == "all_vertices") {
-    cc.template write_all_vertices<VID_T>(FLAGS_output, encoder_ptr);
-  } else if (FLAGS_output_method == "all_edges") {
-    cc.template write_all_edges<VID_T>(FLAGS_output, encoder_ptr);
-  }
+  cc.template write_all_vertices<VID_T>(FLAGS_output, encoder_ptr);
 
   // if (0 == cluster_info.partition_id_) {
   LOG(INFO) << cluster_info.partition_id_ << "connected component done const: " << watch.show("t0") / 1000.0 << "s";
@@ -102,22 +94,17 @@ int main(int argc, char** argv) {
 
   LOG(INFO) << "partitions: " << cluster_info.partitions_ << " partition_id: " << cluster_info.partition_id_ << std::endl;
 
-  bool need_encode = FLAGS_need_encode;
 
-  if (FLAGS_vtype == "uint32")  {
-    run_cgm<uint32_t>(need_encode);
+  if (FLAGS_vtype == "uint32") {
+    run_cgm<uint32_t>();
+  } else if (FLAGS_vtype == "int32") {
+    run_cgm<int32_t>();
+  } else if (FLAGS_vtype == "int64") {
+    run_cgm<int64_t>();
+  } else if (FLAGS_vtype == "uint64") {
+    run_cgm<uint64_t>();
   } else {
-
-    LOG(INFO) << "If vertex type is not uint32_t, It must use encoder";
-    need_encode = true;
-
-    if (FLAGS_vtype == "int32") {
-      run_cgm<int32_t>(need_encode);
-    } else if (FLAGS_vtype == "int64") {
-      run_cgm<int64_t>(need_encode);
-    } else if (FLAGS_vtype == "uint64") {
-      run_cgm<uint64_t>(need_encode);
-    }
+    run_cgm<std::string>();
   }
 
   return 0;

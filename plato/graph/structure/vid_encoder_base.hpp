@@ -31,10 +31,25 @@
 
 namespace plato {
 
-struct vid_encoder_opts_t {
-  bool src_need_encode_ = true;
-  bool dst_need_encode_ = true;
-};
+template<typename VID_T>
+inline typename std::enable_if<std::is_integral<VID_T>::value, size_t>::type size(VID_T) {
+  return sizeof(VID_T);
+}
+
+template<typename VID_T>
+inline typename std::enable_if<!std::is_integral<VID_T>::value, size_t>::type size(const VID_T& vid) { // std::string
+  return vid.size();
+}
+
+template<typename VID_T>
+inline typename std::enable_if<std::is_integral<VID_T>::value, const VID_T*>::type addr(const VID_T& vid) {
+  return &vid;
+}
+
+template<typename VID_T>
+inline typename std::enable_if<!std::is_integral<VID_T>::value, const char*>::type addr(const VID_T& vid) { // std:string
+  return vid.c_str();
+}
 
 template <typename EDATA, typename VID_T = vid_t,
           template <typename, typename> class CACHE = edge_block_cache_t>

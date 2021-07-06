@@ -40,6 +40,8 @@ DEFINE_bool(is_directed,   false,  "is graph directed or not");
 DEFINE_int32(alpha,        -1,     "alpha value used in sequence balance partition");
 DEFINE_bool(part_by_in,    false,  "partition by in-degree");
 DEFINE_int32(num_samples,  10,     "number of nodes to test");
+DEFINE_string(vtype,         "uint32",                 "");
+DEFINE_bool(need_encode,     false,                    "");
 
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -47,18 +49,21 @@ void init(int argc, char** argv) {
   google::LogToStderr();
 }
 
-int main(int argc, char** argv) {
+template <typename VID_T>
+void run_cnc_simple() {
   plato::stop_watch_t watch;
   auto& cluster_info = plato::cluster_info_t::get_instance();
 
-  init(argc, argv);
-  cluster_info.initialize(&argc, &argv);
-  LOG(INFO) << "partitions: " << cluster_info.partitions_ << " partition_id: " << cluster_info.partition_id_ << std::endl;
+
+  plato::distributed_vid_encoder_t<plato::empty_t, VID_T> data_encoder;
+
+  auto encoder_ptr = &data_encoder;
+  if (!FLAGS_need_encode) encoder_ptr = nullptr;
 
   plato::graph_info_t graph_info(FLAGS_is_directed);
-  auto graph = plato::create_dualmode_seq_from_path<plato::empty_t>(&graph_info, FLAGS_input,
+  auto graph = plato::create_dualmode_seq_from_path<plato::empty_t, VID_T>(&graph_info, FLAGS_input,
       plato::edge_format_t::CSV, plato::dummy_decoder<plato::empty_t>,
-      FLAGS_alpha, FLAGS_part_by_in);
+      FLAGS_alpha, FLAGS_part_by_in, encoder_ptr);
 
   plato::algo::david_opts_t opts;
   opts.num_samples_ = FLAGS_num_samples;
@@ -74,17 +79,76 @@ int main(int argc, char** argv) {
   plato::algo::david_closeness_t<dcsc_spec_t, bcsr_spec_t> david(&engine, graph_info, opts);
   david.compute();
 
-  plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
+  if (!boost::starts_with(FLAGS_output, "nebula:")) {
+    plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
 
-  david.save([&] (plato::vid_t v_i, double value) {
-    auto& fs_output = os.local();
-    fs_output << v_i << "," << value << "\n";
-  });
+    david.save([&] (plato::vid_t v_i, double value) {
+      auto& fs_output = os.local();
+      if (encoder_ptr != nullptr) {
+        fs_output << encoder_ptr->decode(v_i) << "," << value << "\n";
+      } else {
+        fs_output << v_i << "," << value << "\n";
+      }
+    });
+  } else {
+    if (encoder_ptr != nullptr) {
+      struct Item {
+        VID_T vid;
+        double value;
+        std::string toString() const {
+          return std::to_string(value);
+        }
+      };
+      plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
+
+      david.save([&] (plato::vid_t v_i, double value) {
+        auto& buffer = writer.local();
+        buffer.add(Item{encoder_ptr->decode(v_i), value});
+      });
+    } else {
+      struct Item {
+        plato::vid_t vid;
+        double value;
+        std::string toString() const {
+          return std::to_string(value);
+        }
+      };
+      plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
+
+      david.save([&] (plato::vid_t v_i, double value) {
+        auto& buffer = writer.local();
+        buffer.add(Item{v_i, value});
+      });
+    }
+  }
 
   if (0 == cluster_info.partition_id_) {
     LOG(INFO) << "cnc done const: " << watch.show("t0") / 1000.0 << "s";
   }
+}
+
+int main(int argc, char** argv) {
+  plato::stop_watch_t watch;
+  auto& cluster_info = plato::cluster_info_t::get_instance();
+
+  init(argc, argv);
+  cluster_info.initialize(&argc, &argv);
+  LOG(INFO) << "partitions: " << cluster_info.partitions_ << " partition_id: " << cluster_info.partition_id_ << std::endl;
+
+
+  if (FLAGS_vtype == "uint32") {
+    run_cnc_simple<uint32_t>();
+  } else if (FLAGS_vtype == "int32")  {
+    run_cnc_simple<int32_t>();
+  } else if (FLAGS_vtype == "uint64") {
+    run_cnc_simple<uint64_t>();
+  } else if (FLAGS_vtype == "int64") {
+    run_cnc_simple<int64_t>();
+  } else if (FLAGS_vtype == "string") {
+    run_cnc_simple<std::string>();
+  } else {
+    LOG(FATAL) << "unknown vtype: " << FLAGS_vtype;
+  }
 
   return 0;
 }
-

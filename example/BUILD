@@ -526,33 +526,6 @@ cc_binary (
 )
 
 cc_binary (
-    name = "encode_simple",
-    srcs = [
-        "encode_simple.cc",
-    ],
-    copts = ['-g', '-O2', ] + PLATO_OPTS,
-    linkopts = [ ] + PLATO_OPTS,
-    deps = [
-        "//3rd/glog:glog",
-        "//3rd/gflags:gflags",
-        "//3rd/boost:boost_include",
-        "//3rd/boost:boost_iostreams",
-
-        "//plato/util:perf",
-        "//plato/util:atomic",
-        "//plato/graph:base",
-        "//plato/graph:state",
-        "//plato/graph:graph",
-        "//plato/graph:structure",
-        "//plato/graph:message_passing",
-    ],
-    defines = [
-        # "__DCSC_DEBUG__",
-    ],
-    linkstatic = 1,
-)
-
-cc_binary (
     name = "infomap_simple",
     srcs = [
         "infomap_simple.cc",

@@ -12,6 +12,7 @@ cc_library (
     "//3rd/glog:glog",
 
     "//plato/util:perf",
+    "//plato/util:nebula_writer",
     "//plato/util:atomic",
     "//plato/graph:graph",
     "//plato/engine:dualmode",

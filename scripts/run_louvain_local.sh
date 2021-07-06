@@ -11,12 +11,12 @@ WNUM=3
 WCORES=8
 
 #INPUT=${INPUT:="$PROJECT/data/graph/v100_e2150_ua_c3.csv"}
-INPUT=${INPUT:="$PROJECT/data/graph/non_coding_5_7_weighted.csv"}
-#INPUT=${INPUT:="nebula:$PROJECT/scripts/nebula.conf"}
+#INPUT=${INPUT:="$PROJECT/data/graph/non_coding_5_7_weighted.csv"}
+INPUT=${INPUT:="nebula:$PROJECT/scripts/nebula.conf"}
 #INPUT=${INPUT:="$PROJECT/data/graph/non_coding_5_7.csv"}
 #INPUT=${INPUT:="$PROJECT/data/graph/raw_graph_10_9.csv"}
-#OUTPUT=${OUTPUT:="nebula:$PROJECT/scripts/nebula.conf"}
-OUTPUT=${OUTPUT:="/tmp/louvain"}
+OUTPUT=${OUTPUT:="nebula:$PROJECT/scripts/nebula.conf"}
+#OUTPUT=${OUTPUT:="/tmp/louvain"}
 IS_DIRECTED=${IS_DIRECTED:=true}
 NEED_ENCODE=${NEED_ENCODE:=true}
 OUTER_ITERATION=10
