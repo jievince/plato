@@ -88,7 +88,7 @@ template <typename ITEM> struct Buffer {
     flush_ = [&]() {
       LOG(INFO) << "flush_, items_.size()=" << items_.size();
       auto stmt = genStmt();
-      LOG(INFO) << "stmt: " << stmt;
+      //LOG(INFO) << "stmt: " << stmt;
       CHECK(!!session_) << "session_ is nullptr";
       int retry = nebula_writer_configs_detail::retry_;
       while (retry--) {

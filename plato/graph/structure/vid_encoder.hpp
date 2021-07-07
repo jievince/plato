@@ -65,6 +65,10 @@ mpi_allgatherv(std::vector<VID_T>& local_ids, std::vector<VID_T>& global_ids, st
     }
 
     auto local_ids_buff = oarchive_p->get_intrusive_buffer();
+    LOG(INFO) << "local_ids_buff:";
+    for (int i = 0; i < local_ids_buff.size_; ++i) {
+      LOG(INFO) << local_ids_buff.data_[i];
+    }
 
     vid_t ids_buff_size = local_ids_buff.size_;
     LOG(INFO) << "ids_buff_size: " << ids_buff_size;
@@ -84,19 +88,33 @@ mpi_allgatherv(std::vector<VID_T>& local_ids, std::vector<VID_T>& global_ids, st
       local_ids_buff_recvcounts[i] = local_ids_buff_sizes[i];
       if (i > 0) local_ids_buff_displs[i] = local_ids_buff_sizes[i - 1] + local_ids_buff_displs[i - 1];
     }
+    for (int i = 0; i < cluster_info.partitions_; ++i) {
+      LOG(INFO) << "local_ids_buff_recvcounts[" << i << "]" << local_ids_buff_recvcounts[i];
+    }
+    for (int i = 0; i < cluster_info.partitions_; ++i) {
+      LOG(INFO) << "local_ids_buff_displs[" << i << "]" << local_ids_buff_displs[i];
+    }
 
     MPI_Allreduce(MPI_IN_PLACE, &ids_buff_size, 1, get_mpi_data_type<vid_t>(), MPI_SUM, MPI_COMM_WORLD);
+    LOG(INFO) << "total ids_buff_size: " << ids_buff_size;
 
     char *global_ids_buff = new char[ids_buff_size];
+
     MPI_Allgatherv(
       local_ids_buff.data_, local_ids_buff.size_, MPI_CHAR, &global_ids_buff,
       &local_ids_buff_recvcounts[0], &local_ids_buff_displs[0], MPI_CHAR, MPI_COMM_WORLD);
+    LOG(INFO) << "global_ids_buff";
+    for (int i = 0; i < ids_buff_size; ++i) {
+      LOG(INFO) << i;
+      LOG(INFO) << global_ids_buff[i];
+    }
 
     for (int p_i = 0; p_i < cluster_info.partitions_; ++p_i) {
       iarchive_p.reset(new iarchive_spec_t(&global_ids_buff[local_ids_buff_displs[p_i]], local_ids_buff_sizes[p_i],
             local_ids.size()));
       for (int i = 0; i < local_ids_buff_sizes[p_i]; ++i) {
-        global_ids[i+local_ids_buff_displs[p_i]] = *(iarchive_p->absorb());
+        auto val = *(iarchive_p->absorb());
+        global_ids[i+local_ids_buff_displs[p_i]] = val;
       }
     }
 }
