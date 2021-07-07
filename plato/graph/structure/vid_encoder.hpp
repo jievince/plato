@@ -23,6 +23,9 @@
 
 #include <vector>
 
+#include "plato/util/archive.hpp"
+#include "yas/types/std/vector.hpp"
+
 #include "plato/graph/base.hpp"
 #include "plato/graph/structure/vid_encoder_base.hpp"
 #include "plato/graph/structure/edge_cache.hpp"
@@ -32,6 +35,73 @@
 
 
 namespace plato {
+
+template <typename VID_T>
+inline typename std::enable_if<std::is_integral<VID_T>::value, void>::type
+mpi_allgatherv(std::vector<VID_T>& local_ids, std::vector<VID_T>& global_ids, std::vector<int>& recvcounts, std::vector<int>& displs) {
+  MPI_Allgatherv(
+    &local_ids[0], local_ids.size(), get_mpi_data_type<VID_T>(), &global_ids[0],
+    &recvcounts[0], &displs[0], get_mpi_data_type<VID_T>(), MPI_COMM_WORLD);
+}
+
+template <typename VID_T>
+inline typename std::enable_if<!std::is_integral<VID_T>::value, void>::type
+mpi_allgatherv(std::vector<VID_T>& local_ids, std::vector<VID_T>& global_ids, std::vector<int>&, std::vector<int>&) {
+    LOG(INFO) << "mpi_allgatherv string start";
+    using msg_type = std::string;
+    using oarchive_spec_t = plato::oarchive_t<msg_type, plato::mem_ostream_t>;
+    using iarchive_spec_t = plato::iarchive_t<msg_type, plato::mem_istream_t>;
+
+    auto& cluster_info = cluster_info_t::get_instance();
+
+    std::unique_ptr<oarchive_spec_t> oarchive_p;
+    std::unique_ptr<iarchive_spec_t> iarchive_p;
+
+    oarchive_p.reset(new oarchive_spec_t);
+
+    for (size_t i = 0; i < local_ids.size(); ++i) {
+      oarchive_p->emit(local_ids[i]);
+      LOG(INFO) << "local_ids[" << i << "]" << local_ids[i];
+    }
+
+    auto local_ids_buff = oarchive_p->get_intrusive_buffer();
+
+    vid_t ids_buff_size = local_ids_buff.size_;
+    LOG(INFO) << "ids_buff_size: " << ids_buff_size;
+
+    std::vector<vid_t> local_ids_buff_sizes(cluster_info.partitions_);
+
+    MPI_Allgather(&ids_buff_size, 1, get_mpi_data_type<vid_t>(), &local_ids_buff_sizes[0], 1, get_mpi_data_type<vid_t>(), MPI_COMM_WORLD);
+
+    for (int p_i = 0; p_i < cluster_info.partitions_; ++p_i) {
+      LOG(INFO) << "local_ids_buff_sizes[" << p_i << "]" << local_ids_buff_sizes[p_i];
+    }
+
+    std::vector<int> local_ids_buff_recvcounts(cluster_info.partitions_);
+    std::vector<int> local_ids_buff_displs(cluster_info.partitions_, 0);
+
+    for (int i = 0; i < cluster_info.partitions_; ++i) {
+      local_ids_buff_recvcounts[i] = local_ids_buff_sizes[i];
+      if (i > 0) local_ids_buff_displs[i] = local_ids_buff_sizes[i - 1] + local_ids_buff_displs[i - 1];
+    }
+
+    MPI_Allreduce(MPI_IN_PLACE, &ids_buff_size, 1, get_mpi_data_type<vid_t>(), MPI_SUM, MPI_COMM_WORLD);
+
+    char *global_ids_buff = new char[ids_buff_size];
+    MPI_Allgatherv(
+      local_ids_buff.data_, local_ids_buff.size_, MPI_CHAR, &global_ids_buff,
+      &local_ids_buff_recvcounts[0], &local_ids_buff_displs[0], MPI_CHAR, MPI_COMM_WORLD);
+
+    for (int p_i = 0; p_i < cluster_info.partitions_; ++p_i) {
+      iarchive_p.reset(new iarchive_spec_t(&global_ids_buff[local_ids_buff_displs[p_i]], local_ids_buff_sizes[p_i],
+            local_ids.size()));
+      for (int i = 0; i < local_ids_buff_sizes[p_i]; ++i) {
+        global_ids[i+local_ids_buff_displs[p_i]] = *(iarchive_p->absorb());
+      }
+    }
+}
+
+
 
 template <typename EDATA, typename VID_T = vid_t, template<typename, typename> class CACHE = edge_block_cache_t>
 class vid_encoder_t : public vid_encoder_base_t<EDATA, VID_T, CACHE>{
@@ -152,9 +222,8 @@ void vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>& cache,
     //LOG(INFO) << "partition: " << i << " count: " << local_sizes[i] << " pos: " << displs[i];
   }
 
-  MPI_Allgatherv(
-    &local_ids[0], local_ids.size(), get_mpi_data_type<VID_T>(), &global_ids_[0],
-    &recvcounts[0], &displs[0], get_mpi_data_type<VID_T>(), MPI_COMM_WORLD);
+  mpi_allgatherv(local_ids, global_ids_, recvcounts, displs);
+
   if (0 == cluster_info.partition_id_) {
     LOG(INFO) << "all gather cost: " << watch.show("t1") / 1000.0;
   }
@@ -162,7 +231,7 @@ void vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T>& cache,
   watch.mark("t1");
   cuckoomap_t id_table(vertex_size * 1.2);
   #pragma omp parallel for num_threads(cluster_info.threads_)
-  for (vid_t i = 0; i < vertex_size; ++i) { 
+  for (vid_t i = 0; i < vertex_size; ++i) {
     id_table.upsert(global_ids_[i], [](vid_t&){ }, i);
   }
 

@@ -52,6 +52,7 @@ DEFINE_uint32(kmax,      1000000,      "calculate the k-Core for k the range [km
 DEFINE_bool(is_directed, true,         "if set to false, system will add reversed edges automatically");
 DEFINE_bool(need_encode,   false,                    "");
 DEFINE_string(vtype,       "uint32",                 "");
+DEFINE_string(encoder,     "single","single or distributed vid encoder");
 DEFINE_int32(alpha,      -1,           "alpha value used in sequence balance partition");
 DEFINE_bool(part_by_in,  false,        "partition by in-degree");
 
@@ -105,9 +106,17 @@ void run_kcore_simple() {
     LOG(INFO) << "is_directed: " << FLAGS_is_directed;
   }
 
-  plato::distributed_vid_encoder_t<plato::empty_t, VID_T> data_encoder;
-  auto encoder_ptr = &data_encoder;
-  if (!FLAGS_need_encode) encoder_ptr = nullptr;
+  plato::vid_encoder_t<plato::empty_t, VID_T> single_data_encoder;
+  plato::distributed_vid_encoder_t<plato::empty_t, VID_T> distributed_data_encoder;
+
+  plato::vencoder_t<plato::empty_t, VID_T> encoder_ptr = nullptr;
+  if (FLAGS_need_encode) {
+    if (FLAGS_encoder == "single") {
+      encoder_ptr = &single_data_encoder;
+    } else {
+      encoder_ptr = &distributed_data_encoder;
+    }
+  }
 
   plato::graph_info_t graph_info(FLAGS_is_directed);
 

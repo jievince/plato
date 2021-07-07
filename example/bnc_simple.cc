@@ -39,6 +39,7 @@ DEFINE_string(output,      "",     "output directory, store the closeness result
 DEFINE_string(vtype,       "uint32",                 "");
 DEFINE_bool(is_directed,   false,  "is graph directed or not");
 DEFINE_bool(need_encode,   false,                    "");
+DEFINE_string(encoder,     "single","single or distributed vid encoder");
 DEFINE_int32(alpha,        -1,     "alpha value used in sequence balance partition");
 DEFINE_bool(part_by_in,    false,  "partition by in-degree");
 DEFINE_int32(chosen,       -1,     "chosen vertex");
@@ -56,10 +57,17 @@ void run_bnc_simple() {
   plato::stop_watch_t watch;
   auto& cluster_info = plato::cluster_info_t::get_instance();
 
-  plato::distributed_vid_encoder_t<plato::empty_t, VID_T> data_encoder;
+  plato::vid_encoder_t<plato::empty_t, VID_T> single_data_encoder;
+  plato::distributed_vid_encoder_t<plato::empty_t, VID_T> distributed_data_encoder;
 
-  auto encoder_ptr = &data_encoder;
-  if (!FLAGS_need_encode) encoder_ptr = nullptr;
+  plato::vencoder_t<plato::empty_t, VID_T> encoder_ptr = nullptr;
+  if (FLAGS_need_encode) {
+    if (FLAGS_encoder == "single") {
+      encoder_ptr = &single_data_encoder;
+    } else {
+      encoder_ptr = &distributed_data_encoder;
+    }
+  }
 
   plato::graph_info_t graph_info(FLAGS_is_directed);
   auto graph = plato::create_dualmode_seq_from_path<plato::empty_t, VID_T>(&graph_info, FLAGS_input,

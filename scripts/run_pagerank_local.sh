@@ -7,8 +7,8 @@ PROJECT=$(realpath $CUR_DIR/..)
 cd $PROJECT
 
 MAIN="$PROJECT/bazel-bin/example/pagerank" # process name
-WNUM=2
-WCORES=32
+WNUM=3
+WCORES=6
 
 #INPUT=${INPUT:="$PROJECT/data/graph/v100_e2150_ua_c3.csv"}
 INPUT=${INPUT:="nebula:$PROJECT/scripts/nebula.conf"}
@@ -18,7 +18,7 @@ OUTPUT=${OUTPUT:="nebula:$PROJECT/scripts/nebula.conf"}
 #OUTPUT=${OUTPUT:="/tmp/pagerank"}
 IS_DIRECTED=${IS_DIRECTED:=true}
 NEED_ENCODE=${NEED_ENCODE:=true}
-VTYPE=${VTYPE:=string}
+VTYPE=${VTYPE:=int64}
 EPS=${EPS:=0.0001}
 DAMPING=${DAMPING:=0.85}
 ITERATIONS=${ITERATIONS:=100}

@@ -49,7 +49,6 @@ DEFINE_string(output,      "",      "output directory");
 DEFINE_bool(is_directed,   false,   "is graph directed or not");
 DEFINE_bool(need_encode,   false,                    "");
 DEFINE_string(vtype,       "uint32",                 "");
-DEFINE_string(encoder,     "single","single or distributed vid encoder");
 DEFINE_bool(part_by_in,    false,   "partition by in-degree");
 DEFINE_int32(alpha,        -1,      "alpha value used in sequence balance partition");
 DEFINE_uint64(iterations,  100,     "number of iterations");
@@ -79,17 +78,9 @@ void run_pagerank() {
 
   watch.mark("t0");
 
-  plato::vid_encoder_t<plato::empty_t, VID_T> single_data_encoder;
-  plato::distributed_vid_encoder_t<plato::empty_t, VID_T> distributed_data_encoder;
-
-  plato::vencoder_t<plato::empty_t, VID_T> encoder_ptr = nullptr;
-  if (FLAGS_need_encode) {
-    if (FLAGS_encoder == "single") {
-      encoder_ptr = &single_data_encoder;
-    } else {
-      encoder_ptr = &distributed_data_encoder;
-    }
-  }
+  plato::vid_encoder_t<plato::empty_t, VID_T> data_encoder;
+  auto encoder_ptr = &data_encoder;
+  if (!FLAGS_need_encode) encoder_ptr = nullptr;
 
   // init graph
   plato::graph_info_t graph_info(FLAGS_is_directed);

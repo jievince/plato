@@ -37,7 +37,9 @@
 DEFINE_string(input,       "",      "input file, in csv format, without edge data");
 DEFINE_string(output,      "",      "output directory");
 DEFINE_bool(is_directed,   false,   "is graph directed or not");
+DEFINE_string(vtype,       "uint32",                 "");
 DEFINE_bool(need_encode,   false,                    "");
+DEFINE_string(encoder,     "single","single or distributed vid encoder");
 DEFINE_bool(part_by_in,    true,   "partition by in-degree");
 DEFINE_int32(alpha,        -1,      "alpha value used in sequence balance partition");
 DEFINE_uint32(iterations,  20,     "number of iterations");
@@ -67,33 +69,32 @@ void print_flags(){
 }
 
 
-
-int main(int argc, char** argv) {
+template <typename VID_T>
+void run_lpa() {
   plato::stop_watch_t watch;
   auto& cluster_info = plato::cluster_info_t::get_instance();
 
-  init(argc, argv);
-  cluster_info.initialize(&argc, &argv);
-
-  if (0 == cluster_info.partition_id_) {
-    print_flags();
-  }
-
   watch.mark("t0");
 
-  plato::distributed_vid_encoder_t<plato::empty_t> data_encoder;
+  plato::vid_encoder_t<plato::empty_t, VID_T> single_data_encoder;
+  plato::distributed_vid_encoder_t<plato::empty_t, VID_T> distributed_data_encoder;
 
-  auto encoder_ptr = &data_encoder;
-  if (!FLAGS_need_encode) encoder_ptr = nullptr;
-
+  plato::vencoder_t<plato::empty_t, VID_T> encoder_ptr = nullptr;
+  if (FLAGS_need_encode) {
+    if (FLAGS_encoder == "single") {
+      encoder_ptr = &single_data_encoder;
+    } else {
+      encoder_ptr = &distributed_data_encoder;
+    }
+  }
   plato::graph_info_t graph_info(FLAGS_is_directed);
 
-  auto pdcsc = plato::create_dcsc_seqd_from_path<plato::empty_t>(
+  auto pdcsc = plato::create_dcsc_seqd_from_path<plato::empty_t, VID_T>(
     &graph_info, FLAGS_input, plato::edge_format_t::CSV,
     plato::dummy_decoder<plato::empty_t>, FLAGS_alpha, FLAGS_part_by_in, encoder_ptr
   );
 
-  using graph_spec_t = std::remove_reference<decltype(*pdcsc)>::type;
+  using graph_spec_t = typename std::remove_reference<decltype(*pdcsc)>::type;
 
   plato::algo::lpa_opts_t opts;
   opts.iteration_ = FLAGS_iterations;
@@ -109,11 +110,11 @@ int main(int argc, char** argv) {
     if (!boost::starts_with(FLAGS_output, "nebula:")) {
       plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
 
-      labels.foreach<int> (
+      labels.template foreach<int> (
         [&](plato::vid_t v_i, plato::vid_t* pval) {
           auto& fs_output = os.local();
           if (encoder_ptr != nullptr) {
-            fs_output << encoder_ptr->decode(v_i) << "," << *pval << "\n";
+            fs_output << encoder_ptr->decode(v_i) << "," << encoder_ptr->decode(*pval) << "\n";
           } else {
             fs_output << v_i << "," << *pval << "\n";
           }
@@ -121,29 +122,68 @@ int main(int argc, char** argv) {
         }
       );
     } else {
-      struct Item {
-        plato::vid_t vid;
-        plato::vid_t pval;
-        std::string toString() const {
-          return std::to_string(pval);
-        }
-      };
-      plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
-      labels.foreach<int> (
-        [&](plato::vid_t v_i, plato::vid_t* pval) {
-          auto& buffer = writer.local();
-          if (encoder_ptr != nullptr) {
-            buffer.add(Item{encoder_ptr->decode(v_i), *pval});
-          } else {
-            buffer.add(Item{v_i, *pval});
+      if (encoder_ptr != nullptr) {
+        struct Item {
+          VID_T vid;
+          VID_T pval;
+          std::string toString() const {
+            return std::to_string(pval);
           }
-          return 0;
-        }
-      );
+        };
+        plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
+        labels.template foreach<int> (
+          [&](plato::vid_t v_i, plato::vid_t* pval) {
+            auto& buffer = writer.local();
+            buffer.add(Item{encoder_ptr->decode(v_i), encoder_ptr->decode(*pval)});
+            return 0;
+          }
+        );
+      } else {
+        struct Item {
+          plato::vid_t vid;
+          plato::vid_t pval;
+          std::string toString() const {
+            return std::to_string(pval);
+          }
+        };
+        plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
+        labels.template foreach<int> (
+          [&](plato::vid_t v_i, plato::vid_t* pval) {
+            auto& buffer = writer.local();
+            buffer.add(Item{v_i, *pval});
+            return 0;
+          }
+        );
+      }
     }
   }
   if (0 == cluster_info.partition_id_) {
     LOG(INFO) << "save result cost: " << watch.show("t1") / 1000.0 << "s";
+  }
+}
+
+int main(int argc, char** argv) {
+  auto& cluster_info = plato::cluster_info_t::get_instance();
+
+  init(argc, argv);
+  cluster_info.initialize(&argc, &argv);
+
+  if (0 == cluster_info.partition_id_) {
+    print_flags();
+  }
+
+  if (FLAGS_vtype == "uint32") {
+    run_lpa<uint32_t>();
+  } else if (FLAGS_vtype == "int32")  {
+    run_lpa<int32_t>();
+  } else if (FLAGS_vtype == "uint64") {
+    run_lpa<uint64_t>();
+  } else if (FLAGS_vtype == "int64") {
+    run_lpa<int64_t>();
+  } else if (FLAGS_vtype == "string") {
+    run_lpa<std::string>();
+  } else {
+    LOG(FATAL) << "unknown vtype: " << FLAGS_vtype;
   }
 
   return 0;

@@ -43,6 +43,7 @@ DEFINE_string(output,      "",      "output directory");
 DEFINE_string(vtype,       "uint32",                 "");
 DEFINE_bool(is_directed,   true,    "is graph directed or not");
 DEFINE_bool(need_encode,   false,                    "");
+DEFINE_string(encoder,     "single","single or distributed vid encoder");
 DEFINE_bool(part_by_in,    true,    "partition by in-degree");
 DEFINE_int32(alpha,        -1,      "alpha value used in sequence balance partition");
 DEFINE_uint32(iterations,  20,      "number of iterations");
@@ -85,10 +86,17 @@ void run_hanp() {
 
   using edge_value_t = float;
 
-  plato::distributed_vid_encoder_t<edge_value_t, VID_T> data_encoder;
+  plato::vid_encoder_t<edge_value_t, VID_T> single_data_encoder;
+  plato::distributed_vid_encoder_t<edge_value_t, VID_T> distributed_data_encoder;
 
-  auto encoder_ptr = &data_encoder;
-  if (!FLAGS_need_encode) encoder_ptr = nullptr;
+  plato::vencoder_t<edge_value_t, VID_T> encoder_ptr = nullptr;
+  if (FLAGS_need_encode) {
+    if (FLAGS_encoder == "single") {
+      encoder_ptr = &single_data_encoder;
+    } else {
+      encoder_ptr = &distributed_data_encoder;
+    }
+  }
 
   plato::graph_info_t graph_info(FLAGS_is_directed);
 

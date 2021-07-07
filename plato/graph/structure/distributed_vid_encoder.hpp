@@ -292,7 +292,7 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T> 
     // bsp_opts.global_size_    = 64 * MBYTES;
     // bsp_opts.local_capacity_ = 32 * PAGESIZE;
 
-    auto spread_task = [&](const push_context_t& context, size_t i, edge_unit_spec_t *edge) { /// 发送编码请求--> 发送读cache的ShuffleFin
+    auto spread_task = [&](const push_context_t& context, size_t i, edge_unit_spec_t *edge) {
       size_t idx = k.fetch_add(1, std::memory_order_relaxed);
       items[idx].edata_ = edge->edata_;
       {
