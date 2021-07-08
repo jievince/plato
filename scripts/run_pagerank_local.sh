@@ -7,7 +7,7 @@ PROJECT=$(realpath $CUR_DIR/..)
 cd $PROJECT
 
 MAIN="$PROJECT/bazel-bin/example/pagerank" # process name
-WNUM=3
+WNUM=1
 WCORES=6
 
 #INPUT=${INPUT:="$PROJECT/data/graph/v100_e2150_ua_c3.csv"}
@@ -19,13 +19,14 @@ OUTPUT=${OUTPUT:="nebula:$PROJECT/scripts/nebula.conf"}
 IS_DIRECTED=${IS_DIRECTED:=true}
 NEED_ENCODE=${NEED_ENCODE:=true}
 VTYPE=${VTYPE:=int64}
+ENCODER=${ENCODER:="distributed"}
 EPS=${EPS:=0.0001}
 DAMPING=${DAMPING:=0.85}
 ITERATIONS=${ITERATIONS:=100}
 
 # param
 PARAMS+=" --threads ${WCORES}"
-PARAMS+=" --input ${INPUT} --output ${OUTPUT} --is_directed=${IS_DIRECTED} --need_encode=${NEED_ENCODE} --vtype=${VTYPE}"
+PARAMS+=" --input ${INPUT} --output ${OUTPUT} --is_directed=${IS_DIRECTED} --need_encode=${NEED_ENCODE} --vtype=${VTYPE} --encoder=${ENCODER}"
 PARAMS+=" --iterations ${ITERATIONS} --eps ${EPS} --damping ${DAMPING}"
 
 # mpich

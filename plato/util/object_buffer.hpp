@@ -83,6 +83,13 @@ public:
   void   clear(void);
 
   /**
+   * @brief not thread-safe resize
+   * @parm size
+   * @parm need_construct
+   * @return
+   */
+  void resize(size_t size, bool need_construct = false);
+  /**
    * @brief thread-safe emplace_back
    * @tparam Args
    * @param args
@@ -270,6 +277,16 @@ void object_buffer_t<T, ALLOC>::clear(void) {
 }
 
 template <typename T, typename ALLOC >
+void object_buffer_t<T, ALLOC>::resize(size_t size, bool need_construct) {
+  __sync_fetch_and_add(&size_, size);
+  if (need_construct) {
+    for (size_t i = 0; i < size; ++i) {
+      allocator_.construct(&objs_[i], T{});
+    }
+  }
+}
+
+template <typename T, typename ALLOC >
 template <typename... Args>
 size_t object_buffer_t<T, ALLOC>::emplace_back(Args&&... args) {
   size_t idx = __sync_fetch_and_add(&size_, 1);
@@ -383,7 +400,7 @@ public:
    * @param block_num_
    * @param block_size
    */
-  object_block_buffer_t(size_t block_num_ = 1024, size_t block_size = HUGESIZE);
+  object_block_buffer_t(size_t block_num_ = 1024, size_t block_size = HUGESIZE, bool reserve_max_block_num = true);
 
   /**
    * @brief getter
@@ -403,6 +420,13 @@ public:
    * @param new_block_num
    */
   void expand_blocks(size_t new_block_num);
+
+  /**
+   * @brief
+   * @param size
+   * @parm need_construct
+   */
+  void resize(size_t size, bool need_construct = false);
 
   /**
    * @brief thread-safe
@@ -440,7 +464,7 @@ public:
   void reset_traversal(const traverse_opts_t& opts = traverse_opts_t());
 
   template <typename Traversal>
-  bool next_chunk(Traversal&& traversal, size_t* chunk_size);
+  bool next_chunk(Traversal&& traversal, size_t* chunk_size, bool traverse_block = false);
 private:
   size_t block_num_;
   size_t size_;
@@ -453,11 +477,15 @@ private:
 };
 
 template <typename T>
-object_block_buffer_t<T>::object_block_buffer_t(size_t block_num, size_t block_size) :
+object_block_buffer_t<T>::object_block_buffer_t(size_t block_num, size_t block_size, bool reserve_max_block_num) :
     block_num_(block_num), size_(0), block_size_(block_size), traverse_i_(0)  {
   size_t max_item_num = (size_t)sysconf(_SC_PAGESIZE) * (size_t)sysconf(_SC_PHYS_PAGES) / sizeof(T);
   size_t max_block_num = (max_item_num + block_size - 1) / block_size;
-  buffers_.reserve(max_block_num); // make sure there is no need to expand memory
+  if (reserve_max_block_num) {
+    buffers_.reserve(max_block_num); // make sure there is no need to expand memory
+  } else {
+    buffers_.reserve(block_num);
+  }
   for (size_t i = 0; i < block_num; ++i) { //just init first block_num buffers
     std::shared_ptr<object_buffer_t<T, allocator_type>> buffer_ptr(new object_buffer_t<T, allocator_type>(block_size));
     buffers_.push_back(buffer_ptr);
@@ -484,6 +512,16 @@ void object_block_buffer_t<T>::expand_blocks(size_t need_block_num) {
     }
     block_num_ = need_block_num;
   }
+}
+
+template <typename T>
+void object_block_buffer_t<T>::resize(size_t size, bool need_construct) {
+  __sync_fetch_and_add(&size_, size);
+  size_t need_resize_blocks = size / block_size_;
+  for (size_t block_id = 0; block_id < need_resize_blocks; ++block_id) {
+    buffers_[block_id]->resize(block_size_);
+  }
+  buffers_[need_resize_blocks]->resize(size - need_resize_blocks * block_size_);
 }
 
 template <typename T>
@@ -542,7 +580,7 @@ void object_block_buffer_t<T>::reset_traversal(const traverse_opts_t& opts) {
 
 template <typename T>
 template <typename Traversal>
-bool object_block_buffer_t<T>::next_chunk(Traversal&& traversal, size_t* chunk_size) {
+bool object_block_buffer_t<T>::next_chunk(Traversal&& traversal, size_t* chunk_size, bool traverse_block) {
   size_t max_chunk_size = used_block_num_ / omp_get_num_threads() + 1;
   if (max_chunk_size < *chunk_size) *chunk_size = max_chunk_size;
   size_t range_start = traverse_i_.fetch_add(*chunk_size, std::memory_order_relaxed);
@@ -556,9 +594,14 @@ bool object_block_buffer_t<T>::next_chunk(Traversal&& traversal, size_t* chunk_s
     size_t block_size = buffers_[i]->size();
     if (block_size == 0) continue;
     T* ptr = &((*buffers_[i])[0]);
-    for (size_t j = 0; j < block_size; ++j) {
-      traversal(j, ptr + j);
+    if (traverse_block) {
+      traversal(block_size, ptr);
+    } else {
+      for (size_t j = 0; j < block_size; ++j) {
+        traversal(j, ptr + j);
+      }
     }
+
 
     if (opts_.auto_release_) {
       buffers_[i].reset();

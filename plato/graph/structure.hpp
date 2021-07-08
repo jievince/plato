@@ -243,8 +243,15 @@ void load_edges_cache_with_encoder(
   }
   LOG(INFO) << "[" << cluster_info.partition_id_ << "]: read edges cache cost: " << watch.show("t1") / 1000.0 << "s";
 
+  plato::mem_status_t mstatus;
+  plato::self_mem_usage(&mstatus);
+  LOG(INFO) << "memory usage after load edges in load_edges_cache_with_encoder " << (double)mstatus.vm_rss / 1024.0 << " MBytes";
+
   vid_encoder->encode(*pcache, callback);
   LOG(INFO) << "[" << cluster_info.partition_id_ << "]: load edges cache with encoder total cost: " << watch.show("t0") / 1000.0 << "s";
+
+  plato::self_mem_usage(&mstatus);
+  LOG(INFO) << "memory usage after vid_encoder->encode in load_edges_cache_with_encoder " << (double)mstatus.vm_rss / 1024.0 << " MBytes";
 }
 
 /*
@@ -274,9 +281,21 @@ std::shared_ptr<CACHE<EDATA, vid_t>> load_edges_cache(
     data_callback_t<EDATA, vid_t>   callback = nullptr,
     vencoder_t<EDATA, VID_T, CACHE> vid_encoder = nullptr) {
 
+  plato::mem_status_t mstatus;
+  plato::self_mem_usage(&mstatus);
+  LOG(INFO) << "memory usage at the start of load_edges_cache: " << (double)mstatus.vm_rss / 1024.0 << " MBytes";
+
   eid_t edges = 0;
   bitmap_t<> v_bitmap(std::numeric_limits<vid_t>::max());
+
+  plato::self_mem_usage(&mstatus);
+  LOG(INFO) << "memory usage after v_bitmap: " << (double)mstatus.vm_rss / 1024.0 << " MBytes";
+
   std::shared_ptr<CACHE<EDATA, vid_t>> cache(new CACHE<EDATA, vid_t>());
+
+  plato::self_mem_usage(&mstatus);
+  LOG(INFO) << "memory usage after cache: " << (double)mstatus.vm_rss / 1024.0 << " MBytes";
+
   auto real_callback = [&](edge_unit_t<EDATA, vid_t>* input, size_t size) {
     __sync_fetch_and_add(&edges, size);
     for (size_t i = 0; i < size; ++i) {

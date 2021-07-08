@@ -268,7 +268,14 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T> 
 
   watch.mark("t1");
 
-  std::vector<edge_unit_t<EDATA, vid_t>> items(cache.size()); /// shoule be resized to size of local edges
+  plato::mem_status_t mstatus;
+  plato::self_mem_usage(&mstatus);
+  LOG(INFO) << "memory usage before items: " << (double)mstatus.vm_rss / 1024.0 << " MBytes";
+
+  size_t block_num = cache.size() / HUGESIZE + 1;
+  object_block_buffer_t<edge_unit_t<EDATA, vid_t>> items(block_num, HUGESIZE, false); /// shoule be resized to size of local edges
+  items.resize(cache.size());
+
   std::atomic<size_t> k(0);
   std::atomic<size_t> sended(0);
 
@@ -276,7 +283,6 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T> 
   watch.mark("t1");
   LOG(INFO) << "---------------------- send/recv encode req start";
 
-  plato::mem_status_t mstatus;
   plato::self_mem_usage(&mstatus);
   LOG(INFO) << "memory usage at send/recv encode req start: " << (double)mstatus.vm_rss / 1024.0 << " MBytes";
 
@@ -320,7 +326,11 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T> 
       size_t chunk_size = bsp_opts.local_capacity_;
       auto rebind_traversal = bind_task_detail::bind_send_task(std::move(spread_task),
           std::move(context));
-      while (cache.next_chunk(rebind_traversal, &chunk_size)) { LOG(INFO) << "---------------__send: in while"; }
+      while (cache.next_chunk(rebind_traversal, &chunk_size)) { 
+        LOG(INFO) << "---------------__send: in while";
+        plato::self_mem_usage(&mstatus);
+        LOG(INFO) << "memory usage after callback: " << (double)mstatus.vm_rss / 1024.0 << " MBytes";
+      }
       LOG(INFO) << "-------------__send: after while";
     };
 
@@ -347,8 +357,19 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T> 
   plato::self_mem_usage(&mstatus);
   LOG(INFO) << "memory usage after send/recv encode req start: " << (double)mstatus.vm_rss / 1024.0 << " MBytes";
 
+  traverse_opts_t traverse_opts;
+  traverse_opts.auto_release_ = true;
+  items.reset_traversal(traverse_opts);
 
-  callback(&items[0], items.size());
+  auto traversal = [&](size_t block_size, edge_unit_t<EDATA, vid_t>* edge) {
+    callback(edge, block_size);
+    return true;
+  };
+
+  size_t chunk_size = 64;
+  while (items.next_chunk(traversal, &chunk_size, true)) { LOG(INFO) << "items.next_chunk..."; }
+
+  //callback(items[0], items.size());
   lock_table.reset(nullptr);
 
   plato::self_mem_usage(&mstatus);
