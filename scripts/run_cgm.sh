@@ -2,16 +2,15 @@
 
 PROJECT="$(cd "$(dirname "$0")" && pwd)/.."
 
-MAIN="./bazel-bin/example/fast_unfolding_simple" # process name
+MAIN="./bazel-bin/example/cgm_simple" # process name
 
 WNUM=3
 WCORES=8
 
-#INPUT=${INPUT:="$PROJECT/data/graph/non_coding_5_7_weighted.csv"}
+#INPUT=${INPUT:="$PROJECT/data/graph/v100_e2150_ua_c3.csv"}
 INPUT=${INPUT:="nebula:${PROJECT}/scripts/nebula.conf"}
 #OUTPUT=${OUTPUT:='hdfs://192.168.8.149:9000/_test/output'}
 OUTPUT=${OUTPUT:="nebula:$PROJECT/scripts/nebula.conf"}
-#OUTPUT=${OUTPUT:="/tmp/pagerank"}
 IS_DIRECTED=${IS_DIRECTED:=true}  # let plato auto add reversed edge or not
 NEED_ENCODE=${NEED_ENCODE:=true}
 VTYPE=${VTYPE:=uint32}
@@ -19,14 +18,16 @@ VTYPE=${VTYPE:=uint32}
 ALPHA=-1
 PART_BY_IN=false
 
-OUTER_ITERATION=10
-INNER_ITERATION=10
+EPS=${EPS:=0.0001}
+DAMPING=${DAMPING:=0.8}
+ITERATIONS=${ITERATIONS:=5}
 
 export MPIRUN_CMD=${MPIRUN_CMD:="${PROJECT}/3rd/mpich-3.2.1/bin/mpiexec.hydra"}
 
+# param
 PARAMS+=" --threads ${WCORES}"
-PARAMS+=" --input ${INPUT} --output ${OUTPUT} --is_directed=${IS_DIRECTED} --need_encode=${NEED_ENCODE} --vtype=${VTYPE}"
-PARAMS+=" --outer_iteration ${OUTER_ITERATION} --inner_iteration ${INNER_ITERATION}"
+PARAMS+=" --input ${INPUT} --output ${OUTPUT} --is_directed=${IS_DIRECTED} --vtype=${VTYPE} --vtype=${VTYPE}"
+PARAMS+=" --need_encode=${NEED_ENCODE}"
 
 # env for JAVA && HADOOP
 export LD_LIBRARY_PATH=${JAVA_HOME}/jre/lib/amd64/server:${LD_LIBRARY_PATH}

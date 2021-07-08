@@ -13,6 +13,7 @@ INPUT=${INPUT:="nebula:${PROJECT}/scripts/nebula.conf"}
 OUTPUT=${OUTPUT:="nebula:$PROJECT/scripts/nebula.conf"}
 IS_DIRECTED=${IS_DIRECTED:=true}  # let plato auto add reversed edge or not
 NEED_ENCODE=${NEED_ENCODE:=true}
+VTYPE=${VTYPE:=uint32}
 
 ALPHA=-1
 PART_BY_IN=false
@@ -24,7 +25,7 @@ ITERATIONS=${ITERATIONS:=5}
 export MPIRUN_CMD=${MPIRUN_CMD:="${PROJECT}/3rd/mpich-3.2.1/bin/mpiexec.hydra"}
 
 PARAMS+=" --threads ${WCORES}"
-PARAMS+=" --input ${INPUT} --output ${OUTPUT} --is_directed=${IS_DIRECTED} --need_encode=${NEED_ENCODE}"
+PARAMS+=" --input ${INPUT} --output ${OUTPUT} --is_directed=${IS_DIRECTED} --need_encode=${NEED_ENCODE} --vtype=${VTYPE}"
 PARAMS+=" --iterations ${ITERATIONS} --eps ${EPS} --damping ${DAMPING}"
 
 # env for JAVA && HADOOP
