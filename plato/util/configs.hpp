@@ -79,6 +79,10 @@ struct Configs {
     return "";
   }
 
+  const std::unordered_map<std::string, std::string> configs() const {
+    return configs_;
+  }
+
 private:
   std::string trim(std::string const &source, char const *delims = " \t\r\n") {
     std::string result(source);
