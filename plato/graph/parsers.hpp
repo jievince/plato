@@ -171,11 +171,10 @@ public:
    */
   inline bool operator()(EdgeData* output, char* s_input) {
     if (nullptr != s_input) {
-      try {
-        *output = (EdgeData)std::stod(s_input, nullptr);
-      } catch (const std::exception& ex) {
-        *output = (EdgeData)default_value_;
-      }
+        *output = (EdgeData)std::strtod(s_input, &end_ptr);
+        if (end_ptr == s_input) {
+          *output = (EdgeData)default_value_;
+        }
     }
     else {
       *output = (EdgeData)default_value_;
@@ -184,6 +183,7 @@ public:
   }
 private:
   EdgeData default_value_;
+  char *end_ptr{nullptr};
 };
 
 

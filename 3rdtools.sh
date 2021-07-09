@@ -184,12 +184,12 @@ function install {
   popd
 
   ## nebula-cpp
-  if [ ! -f nebula-cpp ]; then
+  if [ ! -d nebula-cpp ]; then
     clean_exec git clone -b scan https://github.com/jievince/nebula-cpp.git
   fi
 
   pushd nebula-cpp
-  clean_exec mkdir build
+  clean_exec mkdir -p build
   pushd build
   clean_exec cmake -DCMAKE_INSTALL_PREFIX=${rootdir}/3rd/nebula-cpp ..
   clean_exec make -j$(nproc)
