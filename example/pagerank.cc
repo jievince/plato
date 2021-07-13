@@ -277,6 +277,22 @@ int main(int argc, char** argv) {
   init(argc, argv);
   cluster_info.initialize(&argc, &argv);
 
+  volatile bool perf_continue = true;
+  std::thread perf_thread([&](void) {
+    plato::mem_status_t mstatus;
+
+    time_t __stump = 0;
+    while (perf_continue) {
+      if (time(nullptr) - __stump < 10) { poll(nullptr, 0, 1); continue; }
+      __stump = time(nullptr);
+
+      plato::self_mem_usage(&mstatus);
+      LOG(INFO) << "[" << cluster_info.partition_id_ << "][perf_thread]memory usage: " << (double)mstatus.vm_rss / 1024.0 << " MBytes";
+
+      __asm volatile ("pause" ::: "memory");
+    }
+  });
+
   if (FLAGS_vtype == "uint32") {
     run_pagerank<uint32_t>();
   } else if (FLAGS_vtype == "int32")  {
@@ -290,6 +306,9 @@ int main(int argc, char** argv) {
   } else {
     LOG(FATAL) << "unknown vtype: " << FLAGS_vtype;
   }
+
+  perf_continue = false;
+  perf_thread.join();
 
   return 0;
 }
