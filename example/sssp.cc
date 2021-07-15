@@ -49,13 +49,11 @@ DEFINE_string(output,      "",      "output directory");
 DEFINE_bool(is_directed,   false,   "is graph directed or not");
 DEFINE_bool(need_encode,   false,                    "");
 DEFINE_string(vtype,       "uint32",                 "");
+DEFINE_string(encoder,     "single","single or distributed vid encoder");
 DEFINE_bool(part_by_in,    false,   "partition by in-degree");
 DEFINE_int32(alpha,        -1,      "alpha value used in sequence balance partition");
-DEFINE_uint64(iterations,  100,     "number of iterations");
-DEFINE_double(damping,     0.85,    "the damping factor");
-DEFINE_double(eps,         0.001,   "the calculation will be consider \
-                                      as complete if the difference of PageRank values between iterations \
-                                      change less than this value for every node");
+DEFINE_string(source,      "",      "source");
+DEFINE_uint32(iterations,   10,      "iterations");
 
 bool string_not_empty(const char*, const std::string& value) {
   if (0 == value.length()) { return false; }
@@ -64,6 +62,7 @@ bool string_not_empty(const char*, const std::string& value) {
 
 DEFINE_validator(input,  &string_not_empty);
 DEFINE_validator(output, &string_not_empty);
+DEFINE_validator(source, &string_not_empty);
 
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -72,64 +71,75 @@ void init(int argc, char** argv) {
 }
 
 template <typename VID_T>
-void run_pagerank() {
+inline typename std::enable_if<std::is_integral<VID_T>::value, VID_T>::type get_source_vid(const std::string& source) {
+  return (VID_T)std::strtoul(FLAGS_source.c_str(), nullptr, 0);
+}
+
+template <typename VID_T>
+inline typename std::enable_if<!std::is_integral<VID_T>::value, VID_T>::type get_source_vid(const std::string& source) {
+  return source;
+}
+
+template <typename VID_T>
+void run_sssp() {
   plato::stop_watch_t watch;
   auto& cluster_info = plato::cluster_info_t::get_instance();
 
   watch.mark("t0");
 
-  plato::vid_encoder_t<plato::empty_t, VID_T> data_encoder;
-  auto encoder_ptr = &data_encoder;
-  if (!FLAGS_need_encode) encoder_ptr = nullptr;
+  VID_T source = get_source_vid<VID_T>(FLAGS_source);
+
+  using edge_value_t = float;
+
+  plato::vid_encoder_t<edge_value_t, VID_T> single_data_encoder;
+  plato::distributed_vid_encoder_t<edge_value_t, VID_T> distributed_data_encoder;
+
+  plato::vencoder_t<edge_value_t, VID_T> encoder_ptr = nullptr;
+  if (FLAGS_need_encode) {
+    if (FLAGS_encoder == "single") {
+      encoder_ptr = &single_data_encoder;
+    } else {
+      encoder_ptr = &distributed_data_encoder;
+    }
+  }
+
+  encoder_ptr->set_vids({source});
 
   // init graph
   plato::graph_info_t graph_info(FLAGS_is_directed);
-  auto pdcsc = plato::create_dcsc_seqs_from_path<plato::empty_t, VID_T>( // seqs means seq part_by_src [master src]->[mirror dst] dense
+  plato::decoder_with_default_t<edge_value_t> decoder((edge_value_t)1);
+  auto pdcsc = plato::create_dcsc_seqs_from_path<edge_value_t, VID_T>( // seqs means seq part_by_src [master src]->[mirror dst] dense
     &graph_info, FLAGS_input, plato::edge_format_t::CSV,
-    plato::dummy_decoder<plato::empty_t>, FLAGS_alpha, FLAGS_part_by_in, encoder_ptr
+    decoder, FLAGS_alpha, FLAGS_part_by_in, encoder_ptr
   );
+
+  std::vector<plato::vid_t> encoded_vids;
+  encoder_ptr->get_vids(encoded_vids);
+  DCHECK(encoded_vids.size() == 1);
+  plato::vid_t root = encoded_vids[0];
 
   using graph_spec_t         = typename std::remove_reference<decltype(*pdcsc)>::type;
   using partition_t          = typename graph_spec_t::partition_t;
   using adj_unit_list_spec_t = typename graph_spec_t::adj_unit_list_spec_t;
   using rank_state_t         = typename plato::dense_state_t<double, partition_t>;
 
-  rank_state_t rank_tmp(18, nullptr);
   // init state
-  std::shared_ptr<rank_state_t> curt_rank(new rank_state_t(graph_info.max_v_i_, pdcsc->partitioner()));
-  std::shared_ptr<rank_state_t> next_rank(new rank_state_t(graph_info.max_v_i_, pdcsc->partitioner()));
 
-  watch.mark("t1");
-  auto odegrees = plato::generate_dense_out_degrees_fg<uint32_t>(graph_info, *pdcsc, false); // out_degrees
+  std::shared_ptr<rank_state_t> distance(new rank_state_t(graph_info.max_v_i_, pdcsc->partitioner()));
 
-  if (0 == cluster_info.partition_id_) {
-    LOG(INFO) << "generate out-degrees from graph cost: " << watch.show("t1") / 1000.0 << "s";
-  }
   watch.mark("t1");
 
   watch.mark("t2"); // do computation
 
-  double delta = curt_rank->template foreach<double> (
-    [&](plato::vid_t v_i, double* pval) {
-      *pval = 1.0;
-      if (odegrees[v_i] > 0) {
-        *pval = *pval / odegrees[v_i];
-      }
-      return 1.0;
-    }
-  );
-  LOG(INFO) << delta;
+  distance->fill(1e9);
+  (*distance)[root] = 0.0;
 
   using context_spec_t = plato::mepa_ag_context_t<double>;
   using message_spec_t = plato::mepa_ag_message_t<double>;
-
+  
   for (uint32_t epoch_i = 0; epoch_i < FLAGS_iterations; ++epoch_i) {
-    if (0 == cluster_info.partition_id_) {
-      LOG(INFO) << "delta: " << delta;
-    }
 
     watch.mark("t1");
-    next_rank->fill(0.0);
 
     if (0 == cluster_info.partition_id_) {
       LOG(INFO) << "[epoch-" << epoch_i  << "] init-next cost: "
@@ -140,14 +150,18 @@ void run_pagerank() {
     // pagerank 只用dense模式
     plato::aggregate_message<double, int, graph_spec_t> (*pdcsc,
       [&](const context_spec_t& context, plato::vid_t v_i, const adj_unit_list_spec_t& adjs) {
-        double rank_sum = 0.0;
-        for (auto it = adjs.begin_; adjs.end_ != it; ++it) { // adjs is incoming edges: [master src]->[mirror dst]
-          rank_sum += (*curt_rank)[it->neighbour_]; // neighbour is [master src]
+        double min_distance = 1e9;
+        double cur_distance = 0.0;
+        for (auto it = adjs.begin_; adjs.end_ != it; ++it) {
+          cur_distance = (*distance)[it->neighbour_] + it->edata_;
+          if (cur_distance < min_distance) {
+            min_distance = cur_distance;
+          }
         }
-        context.send(message_spec_t { v_i, rank_sum });
+        context.send(message_spec_t { v_i, min_distance });
       },
       [&](int /*p_i*/, message_spec_t& msg) {
-        plato::write_add(&(*next_rank)[msg.v_i_], msg.message_);
+        plato::write_min(&(*distance)[msg.v_i_], msg.message_);
         return 0;
       }
     );
@@ -156,46 +170,10 @@ void run_pagerank() {
       LOG(INFO) << "[epoch-" << epoch_i  << "] message-passing cost: "
         << watch.show("t1") / 1000.0 << "s";
     }
-
-    watch.mark("t1");
-    if (FLAGS_iterations - 1 == epoch_i) {
-      delta = next_rank->template foreach<double> (
-        [&](plato::vid_t v_i, double* pval) {
-          *pval = 1.0 - FLAGS_damping + FLAGS_damping * (*pval); // 计算最终pagerank值
-          return 0;
-        }
-      );
-    } else {
-      delta = next_rank->template foreach<double> (
-        [&](plato::vid_t v_i, double* pval) {
-          *pval = 1.0 - FLAGS_damping + FLAGS_damping * (*pval);
-          if (odegrees[v_i] > 0) {
-            *pval = *pval / odegrees[v_i]; // 为下一轮迭代做准备
-            return fabs(*pval - (*curt_rank)[v_i]) * odegrees[v_i]; // 两次迭代的pagerank[v_i]的差值
-          }
-          return fabs(*pval - (*curt_rank)[v_i]);
-        }
-      );
-
-      if (FLAGS_eps > 0.0 && delta < FLAGS_eps) {
-        epoch_i = FLAGS_iterations - 2;
-      }
-    }
-    if (0 == cluster_info.partition_id_) {
-      LOG(INFO) << "[epoch-" << epoch_i  << "] foreach_vertex cost: "
-        << watch.show("t1") / 1000.0 << "s";
-    }
-    std::swap(curt_rank, next_rank);
   }
 
-  delta = curt_rank->template foreach<double> (
-    [&](plato::vid_t v_i, double* pval) {
-      return *pval;
-    }
-  );
-
   if (0 == cluster_info.partition_id_) {
-    LOG(INFO) << "iteration done, cost: " << watch.show("t2") / 1000.0 << "s, rank-sum: " << delta;
+    LOG(INFO) << "iteration done, cost: " << watch.show("t2") / 1000.0 << "s";
     LOG(INFO) << "whole cost: " << watch.show("t0") / 1000.0 << "s";
   }
 
@@ -203,7 +181,7 @@ void run_pagerank() {
   {
     if (!boost::starts_with(FLAGS_output, "nebula:")) {
       plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
-      curt_rank->template foreach<int> (
+      distance->template foreach<int> (
         [&](plato::vid_t v_i, double* pval) {
           auto& fs_output = os.local();
           if (encoder_ptr != nullptr) {
@@ -225,7 +203,7 @@ void run_pagerank() {
         };
         plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
         LOG(INFO) << "thread_local_nebula_writer is constructed....";
-        curt_rank->template foreach<int> (
+        distance->template foreach<int> (
           [&](plato::vid_t v_i, double* pval) {
             auto& buffer = writer.local();
             buffer.add(Item{encoder_ptr->decode(v_i), *pval});
@@ -241,7 +219,7 @@ void run_pagerank() {
           }
         };
         plato::thread_local_nebula_writer<Item> writer(FLAGS_output);
-        curt_rank->template foreach<int> (
+        distance->template foreach<int> (
           [&](plato::vid_t v_i, double* pval) {
             auto& buffer = writer.local();
             buffer.add(Item{v_i, *pval});
@@ -269,15 +247,15 @@ int main(int argc, char** argv) {
   cluster_info.initialize(&argc, &argv);
 
   if (FLAGS_vtype == "uint32") {
-    run_pagerank<uint32_t>();
+    run_sssp<uint32_t>();
   } else if (FLAGS_vtype == "int32")  {
-    run_pagerank<int32_t>();
+    run_sssp<int32_t>();
   } else if (FLAGS_vtype == "uint64") {
-    run_pagerank<uint64_t>();
+    run_sssp<uint64_t>();
   } else if (FLAGS_vtype == "int64") {
-    run_pagerank<int64_t>();
+    run_sssp<int64_t>();
   } else if (FLAGS_vtype == "string") {
-    run_pagerank<std::string>();
+    run_sssp<std::string>();
   } else {
     LOG(FATAL) << "unknown vtype: " << FLAGS_vtype;
   }

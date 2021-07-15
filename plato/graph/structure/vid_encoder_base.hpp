@@ -71,6 +71,10 @@ public:
   virtual void encode(CACHE<EDATA, VID_T> &cache,
                       encoder_callback_t callback) = 0;
 
+  virtual void set_vids(const std::vector<VID_T>& vids) = 0;
+
+  virtual void get_vids(std::vector<vid_t>& encoded_vids) = 0;
+
   /**
    * @brief decode
    * @param v_i

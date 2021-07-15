@@ -103,7 +103,6 @@ void run_pagerank() {
   using adj_unit_list_spec_t = typename graph_spec_t::adj_unit_list_spec_t;
   using rank_state_t         = typename plato::dense_state_t<double, partition_t>;
 
-  rank_state_t rank_tmp(18, nullptr);
   // init state
   std::shared_ptr<rank_state_t> curt_rank(new rank_state_t(graph_info.max_v_i_, pdcsc->partitioner()));
   std::shared_ptr<rank_state_t> next_rank(new rank_state_t(graph_info.max_v_i_, pdcsc->partitioner()));

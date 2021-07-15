@@ -110,6 +110,14 @@ public:
    */
   void encode(CACHE<EDATA, VID_T>& cache, encoder_callback_t callback) override;
 
+  void set_vids(const std::vector<VID_T>& vids) override {
+      vids_ = vids;
+  }
+
+  void get_vids(std::vector<vid_t>& encoded_vids) override {
+      encoded_vids = encoded_vids_;
+  }
+
   /**
    * @brief decode
    * @param v_i
@@ -176,6 +184,9 @@ private:
 
   std::thread decoder_server_;
   bool continue_serve_{true};
+
+  std::vector<VID_T> vids_;
+  std::vector<vid_t> encoded_vids_;
 };
 
 template <typename EDATA, typename VID_T, template<typename, typename> class CACHE>
@@ -369,7 +380,13 @@ void distributed_vid_encoder_t<EDATA, VID_T, CACHE>::encode(CACHE<EDATA, VID_T> 
   size_t chunk_size = 64;
   while (items.next_chunk(traversal, &chunk_size, true)) { LOG(INFO) << "items.next_chunk..."; }
 
-  //callback(items[0], items.size());
+  if (!vids_.empty()) {
+    encoded_vids_.resize(vids_.size());
+    for (size_t i = 0; i < vids_.size(); ++i) {
+      encoded_vids_[i] = lock_table->at(vids_[i]);
+    }
+  }
+
   lock_table.reset(nullptr);
 
   plato::self_mem_usage(&mstatus);
