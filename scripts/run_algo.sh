@@ -191,7 +191,7 @@ if [ ! -d ${LOG_DIR} ]; then
     mkdir -p ${LOG_DIR}
 fi
 
-${MPIRUN_CMD} -n ${WNUM} -f ${PROJECT}/scripts/cluster2 ${PROJECT}/${MAIN} ${PARAMS}
+${MPIRUN_CMD} -n ${WNUM} -f ${PROJECT}/scripts/cluster ${PROJECT}/${MAIN} ${PARAMS}
 
 # process output gzip files
 gzip_files=($(hadoop fs -ls ${OUTPUT} | awk '{if (NR>1){print $NF}}'))

@@ -52,5 +52,4 @@ CMakeLists.txt
 3rd/mpich
 3rd/mpich-3.2.1/
 
-run_plato.go
 run_plato
