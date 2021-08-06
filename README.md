@@ -1,4 +1,4 @@
-# Plato(柏拉图)
+# Nebula-Plato(柏拉图)
 
 [![Build Status](https://travis-ci.org/Tencent/plato.svg?branch=master)](https://travis-ci.org/Tencent/plato) [![docker-build workflow](https://github.com/Tencent/plato/workflows/docker-build/badge.svg)](https://github.com/Tencent/plato/actions?workflow=docker-build) 
 
