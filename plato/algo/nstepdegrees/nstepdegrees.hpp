@@ -464,12 +464,12 @@ void nstepdegrees_t<INCOMING, OUTGOING, BitWidth>::save(STREAM & ss) {
       nstepdegrees_with_vid_t degree;
       while(!done) {
         if(que.pop(degree)) {
-          ss.ostream() << degree.v_i << "," << degree.in_ <<","<< degree.out_ << "\n";
+          *ss[tid] << degree.v_i << "," << (degree.in_ + degree.out_) << "," << degree.in_ <<","<< degree.out_ << "\n";
         }
       }
 
       while(que.pop(degree)) {
-        ss.ostream() << degree.v_i << "," << degree.in_ <<","<< degree.out_ << "\n";
+        *ss[tid] << degree.v_i << "," << (degree.in_ + degree.out_) << "," << degree.in_ <<","<< degree.out_ << "\n";
       }
     }
   });

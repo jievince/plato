@@ -49,7 +49,7 @@ DEFINE_bool(is_directed,   false,   "is graph directed or not");
 DEFINE_int32(step,          -1,     "how many step's degree should be counted, -1 means infinity");
 DEFINE_int32(bits,           6,      "hyperloglog bit width used for cardinality estimation");
 DEFINE_string(type,        "both",  "count 'in' degree or 'out' degree or 'both'");
-DEFINE_string(actives,     "",      "active vertex input in csv format, each line has one"
+DEFINE_string(actives,     "ALL",   "active vertex input in csv format, each line has one"
                                     " vertex id. if this parameter is given, nstepdegrees"
                                     " only calculate active vertex's nstepdegrees.");
 
