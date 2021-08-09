@@ -182,7 +182,7 @@ export LD_LIBRARY_PATH=${JAVA_HOME}/jre/lib/amd64/server:${LD_LIBRARY_PATH}
 export CLASSPATH=${HADOOP_HOME}/etc/hadoop:`find ${HADOOP_HOME}/share/hadoop/ | awk '{path=path":"$0}END{print path}'`
 export LD_LIBRARY_PATH="${HADOOP_HOME}/lib/native":${LD_LIBRARY_PATH}
 
-hdfs dfs -rm -r -f ${OUTPUT}
+# hdfs dfs -rm -r -f ${OUTPUT}
 
 # create log dir if it doesn't exist
 LOG_DIR=/home/vesoft-cm/graph/logs/plato/${OUTPUT_NAME}
