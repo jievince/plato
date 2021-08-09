@@ -22,7 +22,7 @@ type Configs struct {
     Pagerank map[string]interface{} `json:"pagerank"`
     Degree   map[string]interface{} `json:"degree"`
     Cc       map[string]interface{} `json:"cc"`
-    CustomedAlgo map[string]interface{} `json:"customedAlgo"`
+    CustomedAlgo string `json:"customedAlgo"`
 }
 
 func main() {
@@ -149,11 +149,7 @@ func main() {
             command += fmt.Sprintf(" -a cgm_simple -d %v", is_directed)
         default:
             log.Println("Customized algorighm: ", configs.Algo)
-            parameterStr, ok := configs.CustomedAlgo["parameters"]
-            if !ok {
-                log.Println("Warning: Argument parameters is missed")
-                os.Exit(122)
-            }
+            parameterStr := configs.CustomedAlgo
             command += fmt.Sprintf(" -a %v -x \"%v\"", configs.Algo, parameterStr)
     }
     // keys := make([]string, 0, len(configs.Args))
