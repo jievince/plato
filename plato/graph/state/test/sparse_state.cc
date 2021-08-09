@@ -199,7 +199,7 @@ int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
 
   google::InitGoogleLogging("plato-test");
-  google::LogToStderr();
+  // google::LogToStderr();
 
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 

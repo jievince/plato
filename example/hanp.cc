@@ -57,7 +57,7 @@ DEFINE_validator(output, &string_not_empty);
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
-  google::LogToStderr();
+  // google::LogToStderr();
 }
 
 void print_flags(){

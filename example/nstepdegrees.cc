@@ -80,7 +80,7 @@ using v_subset_t  = bitmap_t<>;
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
-  google::LogToStderr();
+  // google::LogToStderr();
 }
 
 /**

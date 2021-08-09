@@ -130,7 +130,7 @@ DEFINE_validator(epoch,    &integer_not_zero<uint32_t>);
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
-  google::LogToStderr();
+  // google::LogToStderr();
 
   auto& cluster_info = plato::cluster_info_t::get_instance();
   cluster_info.initialize(&argc, &argv);

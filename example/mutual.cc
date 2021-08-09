@@ -74,7 +74,7 @@ DEFINE_validator(vdata_bits, [] (const char*, const int value) {return value == 
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
-  google::LogToStderr();
+  // google::LogToStderr();
 }
 
 using edge_t = plato::empty_t;

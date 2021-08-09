@@ -43,7 +43,7 @@ DEFINE_int32(num_samples,  10,     "number of nodes to test");
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
-  google::LogToStderr();
+  // google::LogToStderr();
 }
 
 int main(int argc, char** argv) {

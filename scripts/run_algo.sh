@@ -184,18 +184,17 @@ export LD_LIBRARY_PATH="${HADOOP_HOME}/lib/native":${LD_LIBRARY_PATH}
 
 hdfs dfs -rm -r -f ${OUTPUT}
 
-echo "Start running plato..."
-echo " -n ${WNUM} --threads ${WCORES}"
-echo "${MPIRUN_CMD} -n ${WNUM} -f ${PROJECT}/scripts/cluster ${PROJECT}/${MAIN} ${PARAMS}"
-#chmod 777 ${PROJECT}/${MAIN}
-
 # create log dir if it doesn't exist
 LOG_DIR=/home/vesoft-cm/graph/logs/plato/${OUTPUT_NAME}
 if [ ! -d ${LOG_DIR} ]; then
     mkdir -p ${LOG_DIR}
 fi
 
-${MPIRUN_CMD} -n ${WNUM} -f ${PROJECT}/scripts/cluster ${PROJECT}/${MAIN} ${PARAMS}
+echo "Start running plato, log_dir= ${LOG_DIR}"
+echo "${MPIRUN_CMD} -n ${WNUM} -f ${PROJECT}/scripts/cluster ${PROJECT}/${MAIN} ${PARAMS}" --log_dir=${LOG_DIR}
+#chmod 777 ${PROJECT}/${MAIN}
+
+${MPIRUN_CMD} -n ${WNUM} -f ${PROJECT}/scripts/cluster ${PROJECT}/${MAIN} ${PARAMS} --log_dir=${LOG_DIR}
 
 # process output gzip files
 gzip_files=($(hadoop fs -ls ${OUTPUT} | awk '{if (NR>1){print $NF}}'))

@@ -286,7 +286,7 @@ int main(int argc, char* argv[]) {
 
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging("intersection-test");
-  google::LogToStderr();
+  // google::LogToStderr();
 
   // Run tests, then clean up and exit
   return RUN_ALL_TESTS();
