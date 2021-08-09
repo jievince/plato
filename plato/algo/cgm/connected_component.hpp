@@ -475,7 +475,7 @@ void connected_component_t<INCOMING, OUTGOING>::write_all_vertices(const std::st
   auto active_view = plato::create_active_v_view(engine_->out_edges()->partitioner()->self_v_view(), actives);
 
   auto& cluster_info = plato::cluster_info_t::get_instance();
-  thread_local_fs_output os(prefix, (boost::format("part_%04d_") % cluster_info.partition_id_).str(), true);
+  thread_local_fs_output os(prefix, (boost::format("%04d_") % cluster_info.partition_id_).str(), false, "_algoId,cc");
 
   auto output_result = [&](vid_t v) {
     auto& fs_output = os.local();

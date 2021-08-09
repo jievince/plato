@@ -21,6 +21,7 @@ type Configs struct {
     Hanp     map[string]interface{} `json:"hanp"`
     Pagerank map[string]interface{} `json:"pagerank"`
     Degree   map[string]interface{} `json:"degree"`
+    Cc       map[string]interface{} `json:"cc"`
     CustomedAlgo map[string]interface{} `json:"customedAlgo"`
 }
 
@@ -134,6 +135,18 @@ func main() {
             //     os.Exit(122)
             // }
             command += fmt.Sprintf(" -a nstepdegrees -d %v", true)
+        case "cc":
+            is_directed, ok := configs.Cc["isDirected"]
+            if !ok {
+                log.Println("Warning: Argument isDirected is missed")
+                os.Exit(122)
+            }
+            // maxIter, ok := configs.Cc["maxIter"]
+            // if !ok {
+            //     log.Println("Warning: Argument maxIter is missed")
+            //     os.Exit(122)
+            // }
+            command += fmt.Sprintf(" -a cgm_simple -d %v", is_directed)
         default:
             log.Println("Customized algorighm: ", configs.Algo)
             parameterStr, ok := configs.CustomedAlgo["parameters"]

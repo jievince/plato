@@ -153,6 +153,10 @@ case ${ALGO} in
         OUTPUT_NAME="degree"
         PARAMS+=" --actives ${ACTIVES} --step 1"
         ;;
+   "cgm_simple")
+        OUTPUT_NAME="cc"
+        PARAMS+=" --output_method all_vertices"
+        ;;
     *)
         echo "Customized algorithm: ${ALGO}"
         OUTPUT_NAME=${ALGO}
