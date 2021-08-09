@@ -39,7 +39,7 @@ namespace plato {
 
 class fs_mt_omp_output_t {
 public:
-  fs_mt_omp_output_t(const std::string& path, const std::string& prefix, bool compressed = true);
+  fs_mt_omp_output_t(const std::string& path, const std::string& prefix, bool compressed = false);
 
   fs_mt_omp_output_t(const fs_mt_omp_output_t&) = delete;
   fs_mt_omp_output_t& operator=(const fs_mt_omp_output_t&) = delete;
@@ -52,6 +52,7 @@ protected:
   std::vector<std::unique_ptr<hdfs_t::fstream>> fs_v_;
   std::vector<std::unique_ptr<boost::iostreams::filtering_stream<boost::iostreams::output>>>
     fs_output_v_;
+  std::string header_;
 };
 
 class thread_local_fs_output {
@@ -69,14 +70,24 @@ public:
     return *this;
   }
 
-  thread_local_fs_output(const std::string& path, const std::string& prefix, bool compressed = true);
+  thread_local_fs_output(const std::string& path, const std::string& prefix, bool compressed = false, const std::string& header = "");
 
   ~thread_local_fs_output();
 
   void foreach(std::function<void(const std::string& filename, boost::iostreams::filtering_ostream& os)> reducer);
 
   [[gnu::always_inline]] [[gnu::hot]]
-  boost::iostreams::filtering_ostream& local() { return ((fs*)thread_local_object_detail::get_local_object(id_))->os_; }
+  boost::iostreams::filtering_ostream& local() {
+    thread_local bool has_wrote_header = false;
+
+    auto &m_fs = ((fs*)thread_local_object_detail::get_local_object(id_))->os_;
+    if (has_wrote_header == false) {
+      m_fs << header_ << "\n";
+      has_wrote_header = true;
+    }
+
+    return m_fs;
+  }
 protected:
   struct fs {
     std::string filename_;
@@ -85,6 +96,7 @@ protected:
   };
 
   int id_;
+  std::string header_;
 };
 
 /*

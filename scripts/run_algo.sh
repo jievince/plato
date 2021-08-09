@@ -151,7 +151,7 @@ case ${ALGO} in
         ;;
     "nstepdegrees")
         OUTPUT_NAME="degree"
-        PARAMS+=" --actives ${ACTIVES}"
+        PARAMS+=" --actives ${ACTIVES} --step 1"
         ;;
     *)
         echo "Customized algorithm: ${ALGO}"
@@ -195,17 +195,22 @@ ${MPIRUN_CMD} -n ${WNUM} -f ${PROJECT}/scripts/cluster ${PROJECT}/${MAIN} ${PARA
 
 # process output gzip files
 gzip_files=($(hadoop fs -ls ${OUTPUT} | awk '{if (NR>1){print $NF}}'))
-echo "数组元素个数为: ${#gzip_files[*]}"
-echo "数组元素个数为: ${#gzip_files[@]}"
+echo ${OUTPUT}
+echo "文件个数为: ${#gzip_files[@]}"
 
 for gzip_file in ${gzip_files[@]}
 do
 echo $gzip_file
-echo ${gzip_file:0:(-3)} 
-csv_file=${gzip_file:0:(-3)}
-hadoop fs -cat $gzip_file | gzip -d | sed "1i  _algoId,${OUTPUT_NAME}" | hadoop fs -put - $csv_file
-hadoop fs -rm $gzip_file
 done
+
+# for gzip_file in ${gzip_files[@]}
+# do
+# echo $gzip_file
+# echo ${gzip_file:0:(-3)}
+# csv_file=${gzip_file:0:(-3)}
+# hadoop fs -cat $gzip_file | gzip -d | sed "1i  _algoId,${OUTPUT_NAME}" | hadoop fs -put - $csv_file
+# hadoop fs -rm $gzip_file
+# done
 
 exit $?
 

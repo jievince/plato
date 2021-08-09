@@ -460,16 +460,17 @@ void nstepdegrees_t<INCOMING, OUTGOING, BitWidth>::save(STREAM & ss) {
   std::thread pop_write([&done, &ss, &que, &cluster_info](void) {
 #pragma omp parallel num_threads(cluster_info.threads_)
     {
+      ss.ostream() << "_algoId,degree,inDegree,outDegree" << "\n";
       // int tid = omp_get_thread_num();
       nstepdegrees_with_vid_t degree;
       while(!done) {
         if(que.pop(degree)) {
-          *ss[tid] << degree.v_i << "," << (degree.in_ + degree.out_) << "," << degree.in_ <<","<< degree.out_ << "\n";
+          ss.ostream() << degree.v_i << "," << (degree.in_ + degree.out_) << "," << degree.in_ <<","<< degree.out_ << "\n";
         }
       }
 
       while(que.pop(degree)) {
-        *ss[tid] << degree.v_i << "," << (degree.in_ + degree.out_) << "," << degree.in_ <<","<< degree.out_ << "\n";
+        ss.ostream() << degree.v_i << "," << (degree.in_ + degree.out_) << "," << degree.in_ <<","<< degree.out_ << "\n";
       }
     }
   });

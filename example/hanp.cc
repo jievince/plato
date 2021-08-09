@@ -107,7 +107,7 @@ int main(int argc, char** argv) {
   watch.mark("t0");
   {
     // save result
-    plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
+    plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), false, "_algoId,hanp");
 
     labels.template foreach<int> (
       [&](plato::vid_t v_i, plato::vid_t* pval) {

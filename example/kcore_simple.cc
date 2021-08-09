@@ -109,7 +109,7 @@ int main(int argc, char** argv){
   auto graph = create_bcsr_seqs_from_path<plato::empty_t>(&graph_info, FLAGS_input, plato::edge_format_t::CSV,
       plato::dummy_decoder<plato::empty_t>, FLAGS_alpha, FLAGS_part_by_in, nullptr, false);
 
-  plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
+  plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), false, "_algoId,kcore");
   auto save_kcore_vertex =
     [&](vid_t src, vid_t /*dst*/, uint32_t cur_k) {
       auto& fs_output = os.local();
@@ -133,7 +133,7 @@ int main(int argc, char** argv){
     vid_t cur_k = 0;
 
     while (saved < graph_info.vertices_) {
-      plato::thread_local_fs_output os_sub((boost::format("%s/%u_core") % FLAGS_output % cur_k).str(), (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
+      plato::thread_local_fs_output os_sub((boost::format("%s/%u_core") % FLAGS_output % cur_k).str(), (boost::format("%04d_") % cluster_info.partition_id_).str(), false);
 
       auto save_kcore_subgraph =
         [&](vid_t src, vid_t dst, uint32_t cur_k) {

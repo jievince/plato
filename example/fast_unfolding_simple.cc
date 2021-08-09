@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
   plato::algo::louvain_fast_unfolding_t<BCSR> louvain(graph, graph_info, opts);
   louvain.compute();
 
-  plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
+  plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), false, "_algoId,louvain");
 
   louvain.save([&] (plato::vid_t src, plato::vid_t label) {
     auto& fs_output = os.local();

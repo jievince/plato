@@ -53,3 +53,5 @@ CMakeLists.txt
 3rd/mpich-3.2.1/
 
 run_plato
+
+settings.json

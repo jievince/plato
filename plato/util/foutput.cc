@@ -86,7 +86,7 @@ boost::iostreams::filtering_stream<boost::iostreams::output>& fs_mt_omp_output_t
   return ostream(omp_get_thread_num());
 }
 
-thread_local_fs_output::thread_local_fs_output(const std::string& path, const std::string& prefix, bool compressed) {
+thread_local_fs_output::thread_local_fs_output(const std::string& path, const std::string& prefix, bool compressed, const std::string& header) {
   std::shared_ptr<std::atomic<unsigned>> suffix(new std::atomic<unsigned>());
 
   std::function<void*()> construction([path, prefix, compressed, suffix] {
@@ -128,6 +128,7 @@ thread_local_fs_output::thread_local_fs_output(const std::string& path, const st
 
   id_ = thread_local_object_detail::create_object(std::move(construction), std::move(destruction));
   if (-1 == id_) throw std::runtime_error("thread_local_object_detail::create_object failed.");
+  header_ = header;
 }
 
 thread_local_fs_output::~thread_local_fs_output() {

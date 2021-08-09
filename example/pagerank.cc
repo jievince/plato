@@ -190,7 +190,7 @@ int main(int argc, char** argv) {
 
   watch.mark("t1");
   {  // save result to hdfs
-    plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), true);
+    plato::thread_local_fs_output os(FLAGS_output, (boost::format("%04d_") % cluster_info.partition_id_).str(), false, "_algoId,pagerank");
     curt_rank->foreach<int> (
       [&](plato::vid_t v_i, double* pval) {
         auto& fs_output = os.local();

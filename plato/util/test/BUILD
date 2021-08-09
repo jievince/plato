@@ -54,22 +54,7 @@ cc_test (
   timeout = "short",
 )
 
-cc_test (
-    name = "object_buffer",
-    srcs = [
-        "object_buffer.cc",
-    ],
-    copts = [ '-Wall', '-Werror', '-std=c++11', '-O2', ] + PLATO_OPTS,
-    linkopts = [ ] + PLATO_OPTS,
-    deps = [
-        "//3rd/googletest:gtest_main",
 
-        "//plato/util:object_buffer",
-    ],
-    data = [ ],
-    linkstatic = 1,
-    timeout = "moderate",
-)
 
 cc_test (
     name = "mmap_alloc",
