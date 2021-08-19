@@ -201,13 +201,13 @@ func main() {
                 f.Close()
                 os.Exit(122)
             }
-            hop_att, ok := configs.Hanp["hop_att"]
+            hopAtt, ok := configs.Hanp["hopAtt"]
             if !ok {
-                log.Println("Warning: Argument hop_att is missed")
+                log.Println("Warning: Argument hopAtt is missed")
                 f.Close()
                 os.Exit(122)
             }
-            command += fmt.Sprintf(" -a hanp -r %v -p %v -t %v -d %v", maxIter, preference, hop_att, is_directed)
+            command += fmt.Sprintf(" -a hanp -r %v -p %v -t %v -d %v", maxIter, preference, hopAtt, is_directed)
         case "pagerank":
             is_directed, ok := configs.Pagerank["isDirected"]
             if !ok {
@@ -252,6 +252,12 @@ func main() {
             command += fmt.Sprintf(" -a cgm_simple -d %v", is_directed)
         default:
             log.Println("Customized algorighm: ", configs.Algo)
+            algoFilePath := platoHome+"/bazel-bin/example/"+configs.Algo
+            if _, err := os.Stat(algoFilePath); os.IsNotExist(err) {
+                log.Printf("Error: %v doesn't exist", algoFilePath)
+                f.Close()
+                os.Exit(121)
+            }
             parameterStr := configs.CustomedAlgo
             command += fmt.Sprintf(" -a %v -x \"%v\"", configs.Algo, parameterStr)
     }
