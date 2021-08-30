@@ -6,6 +6,8 @@ HDFS="" # the prefix of hdfs path
 WNUM=3 # number of processes
 WCORES=24 # number of threads
 
+PLATO_LOG_DIR=/home/vesoft-cm/graph/logs/plato # default log dir of plato
+
 ALGO="" # algorithm name
 
 IS_DIRECTED=true
@@ -38,7 +40,7 @@ ACTIVES="ALL"
 # customedAlgo
 PARAMETERS=""
 
-while getopts f:n:c:a:d:o:i:t:e:k:r:p:h:m:x: opt;
+while getopts f:n:c:a:d:o:i:t:e:k:r:p:h:m:x:u: opt;
 do
     echo "getopts....."
     case $opt in
@@ -100,8 +102,12 @@ do
             ;;
         x)
             echo $OPTARG
-            echo "here"
+            echo "set parameters"
             PARAMETERS=$OPTARG
+            ;;
+        u)
+            echo $OPTARG
+            PLATO_LOG_DIR=$OPTARG
             ;;
         ?)
             echo "Invalid option: $OPTARG"
@@ -185,7 +191,7 @@ export LD_LIBRARY_PATH="${HADOOP_HOME}/lib/native":${LD_LIBRARY_PATH}
 # hdfs dfs -rm -r -f ${OUTPUT}
 
 # create log dir if it doesn't exist
-LOG_DIR=/home/vesoft-cm/graph/logs/plato/${OUTPUT_NAME}
+LOG_DIR=${PLATO_LOG_DIR}/${OUTPUT_NAME}
 if [ ! -d ${LOG_DIR} ]; then
     mkdir -p ${LOG_DIR}
 fi

@@ -79,19 +79,22 @@ func logName(t time.Time) (name string) {
 
 func main() {
     if len(os.Args) < 2 {
-        log.Println("plato [jsonStr] [platoHome] [logDirOfRunPlato]")
+        log.Println("plato [jsonStr] [logDir] [platoHome]")
         os.Exit(120)
     }
+    logDir := ""
     platoHome := ""
-    logDirOfRunPlato := ""
     jsonStr := os.Args[1]
     // jsonStr := "{\"hdfs\": \"hdfs://192.168.8.149:9000/\",\"wnum\": 4,\"wcores\": 4,\"algo\": \"pagerank\",\"args\": {\"maxIter\": 10,\"damping\": 0.85,\"is_directed\":false}}"
     log.Println("args num", len(os.Args))
     if len(os.Args) > 2 {
-        platoHome = os.Args[2]
+        logDir = os.Args[2]
     }
     if len(os.Args) > 3 {
-        logDirOfRunPlato = os.Args[3]
+        platoHome = os.Args[3]
+    }
+    if logDir == "" {
+        logDir = "/home/vesoft-cm/graph/logs/run_plato"
     }
     if platoHome == "" {
 		ex, err := os.Executable()
@@ -100,19 +103,18 @@ func main() {
 		}
 		platoHome = filepath.Dir(ex) // Set to executable folder
     }
-    if logDirOfRunPlato == "" {
-        logDirOfRunPlato = "/home/vesoft-cm/graph/logs/run_plato"
-    }
 
-    if _, err := os.Stat(logDirOfRunPlato); os.IsNotExist(err) {
+    runPlatoLogDir := logDir + "/run_plato"
+
+    if _, err := os.Stat(runPlatoLogDir); os.IsNotExist(err) {
         //Create a folder/directory at a full qualified path
-        err := os.MkdirAll(logDirOfRunPlato, 0777)
+        err := os.MkdirAll(runPlatoLogDir, 0777)
         if err != nil {
             log.Panicf("create log_dir failed: %s", err.Error())
         }
     }
 
-    f, err := os.OpenFile(logDirOfRunPlato+"/"+logName(time.Now()), os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
+    f, err := os.OpenFile(runPlatoLogDir+"/"+logName(time.Now()), os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
     if err != nil {
         log.Panicf("error opening file: %v", err)
     }
@@ -121,7 +123,8 @@ func main() {
 
     log.Println("jsonStr: ", jsonStr)
     log.Println("platoHome: ", platoHome)
-    log.Println("logDirOfRunPlato: ", logDirOfRunPlato)
+    log.Println("logDir: ", logDir)
+    log.Println("runPlatoLogDir: ", runPlatoLogDir)
 
     log.SetOutput(f)
     log.Println("This is a test log entry")
@@ -151,7 +154,7 @@ func main() {
                 f.Close()
                 os.Exit(122)
             }
-            command += fmt.Sprintf(" -a fast_unfolding_simple -o %v -i %v -d %v", maxIter, internalIter, is_directed)
+            command += fmt.Sprintf(" -a fast_unfolding_simple -o %v -i %v -d %v -u %v", maxIter, internalIter, is_directed, logDir)
             //tol := configs.Louvain["tol"]
         case "kcore":
             is_directed, ok := configs.Kcore["isDirected"]
@@ -167,7 +170,7 @@ func main() {
                 os.Exit(122)
             }
             //maxIter := configs.Kcore["maxIter"]
-            command += fmt.Sprintf(" -a kcore_simple -k %v -d %v", k, is_directed)
+            command += fmt.Sprintf(" -a kcore_simple -k %v -d %v -u %v", k, is_directed, logDir)
         case "lpa":
             is_directed, ok := configs.Lpa["isDirected"]
             if !ok {
@@ -181,7 +184,7 @@ func main() {
                 f.Close()
                 os.Exit(122)
             }
-            command += fmt.Sprintf(" -a lpa -r %v -d %v", maxIter, is_directed)
+            command += fmt.Sprintf(" -a lpa -r %v -d %v -u %v", maxIter, is_directed, logDir)
         case "hanp":
             is_directed, ok := configs.Hanp["isDirected"]
             if !ok {
@@ -207,7 +210,7 @@ func main() {
                 f.Close()
                 os.Exit(122)
             }
-            command += fmt.Sprintf(" -a hanp -r %v -p %v -t %v -d %v", maxIter, preference, hopAtt, is_directed)
+            command += fmt.Sprintf(" -a hanp -r %v -p %v -t %v -d %v -u %v", maxIter, preference, hopAtt, is_directed, logDir)
         case "pagerank":
             is_directed, ok := configs.Pagerank["isDirected"]
             if !ok {
@@ -227,7 +230,7 @@ func main() {
                 f.Close()
                 os.Exit(122)
             }
-            command += fmt.Sprintf(" -a pagerank -r %v -m %v -d %v", maxIter, damping, is_directed)
+            command += fmt.Sprintf(" -a pagerank -r %v -m %v -d %v -u %v", maxIter, damping, is_directed, logDir)
         case "degree":
             // is_directed, ok := configs.Degree["isDirected"]
             // if !ok {
@@ -235,7 +238,7 @@ func main() {
             //     f.Close()
             //     os.Exit(122)
             // }
-            command += fmt.Sprintf(" -a nstepdegrees -d %v", true)
+            command += fmt.Sprintf(" -a nstepdegrees -d %v -u %v", true, logDir)
         case "cc":
             is_directed, ok := configs.Cc["isDirected"]
             if !ok {
@@ -249,7 +252,7 @@ func main() {
             //     f.Close()
             //     os.Exit(122)
             // }
-            command += fmt.Sprintf(" -a cgm_simple -d %v", is_directed)
+            command += fmt.Sprintf(" -a cgm_simple -d %v -u %v", is_directed, logDir)
         default:
             log.Println("Customized algorighm: ", configs.Algo)
             algoFilePath := platoHome+"/bazel-bin/example/"+configs.Algo
@@ -259,7 +262,7 @@ func main() {
                 os.Exit(121)
             }
             parameterStr := configs.CustomedAlgo
-            command += fmt.Sprintf(" -a %v -x \"%v\"", configs.Algo, parameterStr)
+            command += fmt.Sprintf(" -a %v -x \"%v\" -u %v", configs.Algo, parameterStr, logDir)
     }
     // keys := make([]string, 0, len(configs.Args))
     // for k := range configs.Args {
