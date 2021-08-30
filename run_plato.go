@@ -93,15 +93,15 @@ func main() {
     if len(os.Args) > 3 {
         platoHome = os.Args[3]
     }
-    if logDir == "" {
-        logDir = "/home/vesoft-cm/graph/logs/run_plato"
-    }
     if platoHome == "" {
 		ex, err := os.Executable()
 		if err != nil {
 			log.Panicf("Get run_plato executable failed: %s", err.Error())
 		}
 		platoHome = filepath.Dir(ex) // Set to executable folder
+    }
+    if logDir == "" {
+        logDir = platoHome + "/logs"
     }
 
     runPlatoLogDir := logDir + "/run_plato"
