@@ -55,3 +55,6 @@ CMakeLists.txt
 run_plato
 
 settings.json
+
+
+logs/

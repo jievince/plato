@@ -56,6 +56,12 @@ DEFINE_validator(output, &string_not_empty);
 
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
+  if (!plato::isDirExist(FLAGS_log_dir)) {
+    if (!plato::makePath(FLAGS_log_dir)) {
+      LOG(ERROR) << "faile to create log_dir: " << FLAGS_log_dir;
+    }
+  }
+  CHECK(plato::isDirExist(FLAGS_log_dir));
   google::InitGoogleLogging(argv[0]);
   // google::LogToStderr();
 }
@@ -84,11 +90,14 @@ int main(int argc, char** argv) {
   }
   watch.mark("t0");
 
+  using edge_value_t = float;
+  plato::decoder_with_default_t<edge_value_t> decoder((edge_value_t)1);
+
   plato::graph_info_t graph_info(FLAGS_is_directed);
 
-  auto pdcsc = plato::create_dcsc_seqd_from_path<float>(
+  auto pdcsc = plato::create_dcsc_seqd_from_path<edge_value_t>(
     &graph_info, FLAGS_input, plato::edge_format_t::CSV,
-    plato::float_decoder, FLAGS_alpha, FLAGS_part_by_in
+    decoder, FLAGS_alpha, FLAGS_part_by_in
   );
 
   using graph_spec_t = std::remove_reference<decltype(*pdcsc)>::type;

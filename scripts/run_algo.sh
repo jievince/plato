@@ -2,11 +2,12 @@
 echo "run_algo.sh...."
 set -e
 
+PROJECT="$(cd "$(dirname "$0")" && pwd)/.."
+echo $PROJECT
+
 HDFS="" # the prefix of hdfs path
 WNUM=3 # number of processes
 WCORES=24 # number of threads
-
-PLATO_LOG_DIR=/home/vesoft-cm/graph/logs/plato # default log dir of plato
 
 ALGO="" # algorithm name
 
@@ -39,6 +40,8 @@ ACTIVES="ALL"
 
 # customedAlgo
 PARAMETERS=""
+
+PLATO_LOG_DIR=${PROJECT}/logs/plato # default log dir of plato
 
 while getopts f:n:c:a:d:o:i:t:e:k:r:p:h:m:x:u: opt;
 do
@@ -116,8 +119,6 @@ do
     esac
 done
 
-PROJECT="$(cd "$(dirname "$0")" && pwd)/.."
-echo $PROJECT
 MAIN="./bazel-bin/example/${ALGO}" # process name
 OUTPUT_NAME="invalid_name"
 
@@ -130,8 +131,8 @@ ALPHA=-1
 PART_BY_IN=false
 
 export MPIRUN_CMD=${MPIRUN_CMD:="${PROJECT}/3rd/mpich-3.2.1/bin/mpiexec.hydra"}
-export JAVA_HOME=${APP_JAVA_HOME:='/usr/local/java/jdk1.8.0_271'}
-export HADOOP_HOME=${APP_HADOOP_HOME:='/usr/local/hadoop-2.10.0'}
+export JAVA_HOME=${JAVA_HOME:='/usr/local/java/jdk1.8.0_271'}
+export HADOOP_HOME=${HADOOP_HOME:='/usr/local/hadoop-2.10.0'}
 export HADOOP_CONF_DIR="${HADOOP_HOME}/etc/hadoop"
 
 case ${ALGO} in
@@ -190,11 +191,11 @@ export LD_LIBRARY_PATH="${HADOOP_HOME}/lib/native":${LD_LIBRARY_PATH}
 
 # hdfs dfs -rm -r -f ${OUTPUT}
 
-# create log dir if it doesn't exist
 LOG_DIR=${PLATO_LOG_DIR}/${OUTPUT_NAME}
-if [ ! -d ${LOG_DIR} ]; then
-    mkdir -p ${LOG_DIR}
-fi
+# create log dir if it doesn't exist
+# if [ ! -d ${LOG_DIR} ]; then
+#     mkdir -p ${LOG_DIR}
+# fi
 
 echo "Start running plato, log_dir= ${LOG_DIR}"
 echo "${MPIRUN_CMD} -n ${WNUM} -f ${PROJECT}/scripts/cluster ${PROJECT}/${MAIN} ${PARAMS}" --log_dir=${LOG_DIR}

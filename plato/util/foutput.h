@@ -22,6 +22,8 @@
 #ifndef __PLATO_UTIL_FOUTPUT_HPP__
 #define __PLATO_UTIL_FOUTPUT_HPP__
 
+#include <sys/stat.h> // stat
+#include <errno.h>    // errno, ENOENT, EEXIST
 #include <cstdint>
 #include <cstdlib>
 #include <string>
@@ -123,6 +125,11 @@ inline void with_ofile(const std::string& filename, Func&& func) {
     fout.reset();  // trigger filtering_ostream flush before fstream been closed
   }
 }
+
+bool isDirExist(const std::string& path);
+
+bool makePath(const std::string& path);
+
 
 }  // namespace plato
 

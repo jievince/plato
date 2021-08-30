@@ -43,6 +43,12 @@ DEFINE_int32(inner_iteration, 2,   "inner iteration of algorithm");
 
 void init(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
+  if (!plato::isDirExist(FLAGS_log_dir)) {
+    if (!plato::makePath(FLAGS_log_dir)) {
+      LOG(ERROR) << "faile to create log_dir: " << FLAGS_log_dir;
+    }
+  }
+  CHECK(plato::isDirExist(FLAGS_log_dir));
   google::InitGoogleLogging(argv[0]);
   // google::LogToStderr();
 }
