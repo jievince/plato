@@ -573,3 +573,32 @@ cc_binary (
     ],
     linkstatic = 1,
 )
+
+cc_binary (
+    name = "jaccard_similarity",
+    srcs = [
+        "jaccard_similarity.cc",
+    ],
+    copts = ['-g', '-O2', ] + PLATO_OPTS,
+    linkopts = [ ] + PLATO_OPTS,
+    deps = [
+        "//3rd/glog:glog",
+        "//3rd/gflags:gflags",
+        "//3rd/boost:boost_include",
+        "//3rd/boost:boost_iostreams",
+        "//3rd/yas:yas",
+        "//plato/util:perf",
+        "//plato/util:atomic",
+        "//plato/util:nebula_writer",
+        "//plato/graph:graph",
+        "//plato/graph:base",
+        "//plato/graph:state",
+        "//plato/graph:structure",
+        "//plato/graph:message_passing",
+        "//plato/engine:dualmode",
+    ],
+    defines = [
+        # "__DCSC_DEBUG__",
+    ],
+    linkstatic = 1,
+)
