@@ -78,7 +78,7 @@ void print_flags(){
 }
 
 int main(int argc, char** argv) {
-
+  try {
   plato::stop_watch_t watch;
   auto& cluster_info = plato::cluster_info_t::get_instance();
 
@@ -129,6 +129,9 @@ int main(int argc, char** argv) {
 
   if (0 == cluster_info.partition_id_) {
     LOG(INFO) << "save result cost: " << watch.show("t1") / 1000.0 << "s";
+  }
+  } catch (const std::exception& e) {
+    return 126;
   }
 
   return 0;

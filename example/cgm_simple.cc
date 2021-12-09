@@ -101,6 +101,7 @@ void run_cgm(bool need_encode) {
 }
 
 int main(int argc, char** argv) {
+  try {
   auto& cluster_info = plato::cluster_info_t::get_instance();
 
   init(argc, argv);
@@ -124,6 +125,9 @@ int main(int argc, char** argv) {
     } else if (FLAGS_vtype == "uint64") {
       run_cgm<uint64_t>(need_encode);
     }
+  }
+  } catch (const std::exception& e) {
+    return 126;
   }
 
   return 0;

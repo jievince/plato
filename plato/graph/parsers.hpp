@@ -247,7 +247,7 @@ ssize_t csv_parser(STREAM_T& fin, blockcallback_t<EdgeData, VID_T> callback, dec
       continue;
     }
 
-    auto src = strtoul(pToken, nullptr, 10);
+    auto src = std::stoll(pToken, nullptr, 10);
     CHECK(src <= std::numeric_limits<VID_T>::max()) << "src: " << src << " exceed max value";
     buffer[count].src_ = src;
 
@@ -258,7 +258,7 @@ ssize_t csv_parser(STREAM_T& fin, blockcallback_t<EdgeData, VID_T> callback, dec
       continue;
     }
 
-    auto dst = strtoul(pToken, nullptr, 10);
+    auto dst = std::stoll(pToken, nullptr, 10);
     CHECK(dst <= std::numeric_limits<VID_T>::max()) << "dst: " << dst << " exceed max value";
     buffer[count].dst_ = dst;
 

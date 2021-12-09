@@ -54,6 +54,7 @@ void init(int argc, char** argv) {
 }
 
 int main(int argc, char** argv) {
+  try {
   plato::stop_watch_t watch;
   auto& cluster_info = plato::cluster_info_t::get_instance();
 
@@ -85,5 +86,8 @@ int main(int argc, char** argv) {
   });
 
   LOG(INFO) << "total cost: " << watch.show("t0") / 1000.0;
+  } catch (const std::exception& e) {
+    return 126;
+  }
   return 0;
 }

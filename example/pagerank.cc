@@ -72,6 +72,7 @@ void init(int argc, char** argv) {
 }
 
 int main(int argc, char** argv) {
+  try {
   plato::stop_watch_t watch;
   auto& cluster_info = plato::cluster_info_t::get_instance();
 
@@ -212,6 +213,9 @@ int main(int argc, char** argv) {
   plato::mem_status_t mstatus;
   plato::self_mem_usage(&mstatus);
   LOG(INFO) << "memory usage: " << (double)mstatus.vm_rss / 1024.0 << " MBytes";
+  } catch (const std::exception& e) {
+    return 126;
+  }
 
   return 0;
 }

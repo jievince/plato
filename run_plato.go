@@ -85,6 +85,7 @@ func main() {
     logDir := ""
     platoHome := ""
     jsonStr := os.Args[1]
+    log.Println("jsonStr:", jsonStr)
     // jsonStr := "{\"hdfs\": \"hdfs://192.168.8.149:9000/\",\"wnum\": 4,\"wcores\": 4,\"algo\": \"pagerank\",\"args\": {\"maxIter\": 10,\"damping\": 0.85,\"is_directed\":false}}"
     log.Println("args num", len(os.Args))
     if len(os.Args) > 2 {
@@ -283,7 +284,8 @@ func main() {
     cmd := exec.Command("/bin/bash", "-c", command)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		log.Panicf("cmd.StdoutPipe: %s", err.Error())
+		log.Println("cmd.StdoutPipe: ", err.Error())
+        os.Exit(125)
 	}
 
     cmd.Stderr = cmd.Stdout
@@ -301,7 +303,11 @@ func main() {
 	    log.Println(line)
 	}
 
-	cmd.Wait()
+	err = cmd.Wait()
+	if err != nil {
+		log.Println("cmd.Wait: ", err.Error())
+        os.Exit(126)
+	}
     f.Close()
 }
 

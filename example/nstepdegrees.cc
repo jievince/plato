@@ -110,6 +110,7 @@ void work_flow(dualmode_engine_t<dcsc_spec_t, bcsr_spec_t>* engine, const graph_
 }
 
 int main(int argc, char** argv) {
+  try {
   plato::stop_watch_t watch;
   auto& cluster_info = plato::cluster_info_t::get_instance();
 
@@ -187,6 +188,9 @@ int main(int argc, char** argv) {
 
   if (0 == cluster_info.partition_id_) {
     LOG(INFO) << "nstepdegrees done const: " << watch.show("t0") / 1000.0 << "s";
+  }
+  } catch (const std::exception& e) {
+    return 126;
   }
 
   return 0;
